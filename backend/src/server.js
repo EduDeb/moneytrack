@@ -1,0 +1,172 @@
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+const {
+  generalLimiter,
+  helmetConfig,
+  noSqlSanitize,
+  hpp,
+  xssSanitize,
+  suspiciousActivityDetector,
+  requestLogger
+} = require('./middleware/security');
+
+// Carregar variáveis de ambiente
+dotenv.config();
+
+// Conectar ao banco de dados
+connectDB();
+
+const app = express();
+
+// Trust proxy (para rate limiting funcionar corretamente atrás de proxy)
+app.set('trust proxy', 1);
+
+// ============================================
+// MIDDLEWARES DE SEGURANÇA (ordem importa!)
+// ============================================
+
+// 1. Helmet - Headers de segurança HTTP
+app.use(helmetConfig);
+
+// 2. CORS - Configuração restritiva
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400 // 24 horas
+};
+app.use(cors(corsOptions));
+
+// 3. Rate Limiting Geral
+app.use(generalLimiter);
+
+// 4. Parser de JSON com limite de tamanho (aumentado para suportar imports)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// 5. Sanitização contra NoSQL Injection
+app.use(noSqlSanitize);
+
+// 6. Prevenção de HTTP Parameter Pollution
+app.use(hpp({
+  whitelist: ['category', 'type', 'status', 'tags'] // Campos que podem ter múltiplos valores
+}));
+
+// 7. Sanitização XSS customizada
+app.use(xssSanitize);
+
+// 8. Detector de atividades suspeitas
+app.use(suspiciousActivityDetector);
+
+// 9. Logger de requisições para auditoria
+app.use(requestLogger);
+
+// ============================================
+// ROTAS
+// ============================================
+
+// Autenticação (com rate limiting específico)
+app.use('/api/auth', require('./routes/auth'));
+
+// Rotas principais
+app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/investments', require('./routes/investments'));
+app.use('/api/debts', require('./routes/debts'));
+app.use('/api/bills', require('./routes/bills'));
+app.use('/api/budget', require('./routes/budget'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/goals', require('./routes/goals'));
+app.use('/api/categories', require('./routes/categories'));
+app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/recurring', require('./routes/recurring'));
+app.use('/api/search', require('./routes/search'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/settings', require('./routes/settings'));
+app.use('/api/tags', require('./routes/tags'));
+app.use('/api/profile', require('./routes/profile'));
+app.use('/api/import', require('./routes/import'));
+
+// Gamificação
+app.use('/api/achievements', require('./routes/achievements'));
+
+// Segurança e Auditoria
+app.use('/api/audit', require('./routes/audit'));
+app.use('/api/2fa', require('./routes/twoFactor'));
+
+// Alertas e Projeções Inteligentes
+app.use('/api/alerts', require('./routes/alerts'));
+app.use('/api/projections', require('./routes/projections'));
+app.use('/api/patrimony', require('./routes/patrimony'));
+
+// Rota de saúde (sem autenticação, para monitoramento)
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    message: 'API Finance App funcionando!',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    security: 'enabled'
+  });
+});
+
+// ============================================
+// TRATAMENTO DE ERROS
+// ============================================
+
+// 404 - Rota não encontrada
+app.use((req, res, next) => {
+  res.status(404).json({
+    message: 'Rota não encontrada',
+    path: req.originalUrl
+  });
+});
+
+// Error handler global
+app.use((err, req, res, next) => {
+  console.error(`[ERROR] ${new Date().toISOString()} - ${err.stack}`);
+
+  // Não expor detalhes de erro em produção
+  const isDev = process.env.NODE_ENV === 'development';
+
+  res.status(err.status || 500).json({
+    message: err.message || 'Erro interno do servidor',
+    ...(isDev && { stack: err.stack })
+  });
+});
+
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
+
+const PORT = process.env.PORT || 5000;
+
+const server = app.listen(PORT, () => {
+  console.log(`
+╔══════════════════════════════════════════════╗
+║     🚀 MoneyTrack API Server v2.0.0         ║
+╠══════════════════════════════════════════════╣
+║  Port: ${PORT}                                  ║
+║  Security: ✅ Enabled                        ║
+║  Rate Limiting: ✅ Active                    ║
+║  XSS Protection: ✅ Active                   ║
+║  NoSQL Injection: ✅ Protected               ║
+╚══════════════════════════════════════════════╝
+  `);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM recebido. Encerrando servidor...');
+  server.close(() => {
+    console.log('Servidor encerrado.');
+    process.exit(0);
+  });
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  server.close(() => process.exit(1));
+});

@@ -519,7 +519,8 @@ router.get('/yearly', async (req, res) => {
     }))
 
     transactions.forEach(t => {
-      const month = new Date(t.date).getMonth()
+      // Usar getUTCMonth() para manter consistência com datas UTC armazenadas no banco
+      const month = new Date(t.date).getUTCMonth()
       if (t.type === 'income') {
         monthlyData[month].income += t.amount
       } else {

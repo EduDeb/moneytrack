@@ -1,55 +1,73 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo } from 'react'
 import api from '../services/api'
-import { Plus, Trash2, Edit2, X, Filter } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
-
-const categories = {
-  income: [
-    { value: 'salario', label: 'Salário' },
-    { value: 'freelance', label: 'Freelance' },
-    { value: 'investimentos', label: 'Investimentos' },
-    { value: 'outros_receita', label: 'Outros' }
-  ],
-  expense: [
-    { value: 'alimentacao', label: 'Alimentação' },
-    { value: 'transporte', label: 'Transporte' },
-    { value: 'moradia', label: 'Moradia' },
-    { value: 'saude', label: 'Saúde' },
-    { value: 'educacao', label: 'Educação' },
-    { value: 'lazer', label: 'Lazer' },
-    { value: 'compras', label: 'Compras' },
-    { value: 'contas', label: 'Contas' },
-    { value: 'outros_despesa', label: 'Outros' }
-  ]
-}
-
-const categoryLabels = Object.fromEntries(
-  [...categories.income, ...categories.expense].map(c => [c.value, c.label])
-)
+import { useCategories } from '../contexts/CategoriesContext'
+import MonthSelector from '../components/MonthSelector'
+import SortToggle from '../components/SortToggle'
 
 function Transactions() {
   const { colors, isDark } = useContext(ThemeContext)
+  const { categories, incomeCategories, expenseCategories, categoryLabels, getCategoryLabel } = useCategories()
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [transactions, setTransactions] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
-  const [filter, setFilter] = useState({ type: '', category: '' })
+  const [filter, setFilter] = useState({ type: '', category: '', search: '' })
+  const [showFilters, setShowFilters] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const [sortOrder, setSortOrder] = useState('desc') // 'desc' = mais recentes, 'asc' = mais antigos
+
+  // Pegar primeira categoria disponível
+  const getDefaultCategory = (type) => {
+    const cats = type === 'income' ? incomeCategories : expenseCategories
+    return cats[0]?.value || (type === 'income' ? 'salario' : 'alimentacao')
+  }
 
   const [form, setForm] = useState({
     type: 'expense',
-    category: 'alimentacao',
+    category: '',
     description: '',
     amount: '',
     date: new Date().toISOString().split('T')[0]
   })
 
+  // Atualizar categoria padrão quando categorias carregarem
+  useEffect(() => {
+    if (expenseCategories.length > 0 && !form.category) {
+      setForm(prev => ({ ...prev, category: getDefaultCategory('expense') }))
+    }
+  }, [expenseCategories])
+
   useEffect(() => {
     fetchTransactions()
-  }, [filter])
+    fetchSummary()
+  }, [selectedMonth, selectedYear, filter.type, filter.category])
+
+  const handleMonthChange = (month, year) => {
+    setSelectedMonth(month)
+    setSelectedYear(year)
+  }
+
+  const fetchSummary = async () => {
+    try {
+      const response = await api.get(`/transactions/summary?month=${selectedMonth}&year=${selectedYear}`)
+      setSummary(response.data)
+    } catch (error) {
+      console.error('Erro ao buscar resumo:', error)
+    }
+  }
 
   const fetchTransactions = async () => {
     try {
       const params = new URLSearchParams()
+      params.append('month', selectedMonth)
+      params.append('year', selectedYear)
       if (filter.type) params.append('type', filter.type)
       if (filter.category) params.append('category', filter.category)
 
@@ -64,7 +82,26 @@ function Transactions() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (submitting) return
 
+    // Value overflow protection
+    const amount = parseFloat(form.amount)
+    if (isNaN(amount) || amount <= 0) {
+      alert('Por favor, insira um valor válido maior que zero.')
+      return
+    }
+    if (amount > 999999999.99) {
+      alert('O valor máximo permitido é R$ 999.999.999,99')
+      return
+    }
+
+    // Description length limit
+    if (form.description && form.description.length > 200) {
+      alert('A descrição deve ter no máximo 200 caracteres.')
+      return
+    }
+
+    setSubmitting(true)
     try {
       if (editingTransaction) {
         await api.put(`/transactions/${editingTransaction._id}`, form)
@@ -78,17 +115,25 @@ function Transactions() {
       fetchTransactions()
     } catch (error) {
       console.error('Erro ao salvar transação:', error)
+      alert('Erro ao salvar transação. Tente novamente.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleDelete = async (id) => {
     if (!confirm('Tem certeza que deseja excluir esta transação?')) return
+    if (deleting) return
 
+    setDeleting(id)
     try {
       await api.delete(`/transactions/${id}`)
       fetchTransactions()
     } catch (error) {
       console.error('Erro ao excluir transação:', error)
+      alert('Erro ao excluir transação. Tente novamente.')
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -107,7 +152,7 @@ function Transactions() {
   const resetForm = () => {
     setForm({
       type: 'expense',
-      category: 'alimentacao',
+      category: getDefaultCategory('expense'),
       description: '',
       amount: '',
       date: new Date().toISOString().split('T')[0]
@@ -128,118 +173,262 @@ function Transactions() {
     return `${day}/${month}/${year}`
   }
 
+  // Filtrar e ordenar transações
+  const filteredTransactions = useMemo(() => {
+    let result = transactions.filter(t => {
+      if (filter.search) {
+        const searchLower = filter.search.toLowerCase()
+        return t.description?.toLowerCase().includes(searchLower) ||
+               getCategoryLabel(t.category)?.toLowerCase().includes(searchLower)
+      }
+      return true
+    })
+
+    // Ordenar por data
+    result.sort((a, b) => {
+      const dateA = new Date(a.date)
+      const dateB = new Date(b.date)
+      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB
+    })
+
+    return result
+  }, [transactions, filter.search, sortOrder])
+
   return (
     <div>
+      {/* Header com título e seletor de mês */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>Transações</h1>
-        <button
-          onClick={() => { resetForm(); setEditingTransaction(null); setShowModal(true) }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px',
-            backgroundColor: '#3b82f6', color: 'white', border: 'none',
-            borderRadius: '8px', fontWeight: '500', cursor: 'pointer'
-          }}
-        >
-          <Plus size={18} />
-          Nova Transação
-        </button>
+        <MonthSelector
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onChange={handleMonthChange}
+        />
       </div>
 
-      {/* Filtros */}
+      {/* Cards de Resumo */}
+      {summary && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          {/* Receitas do Mês */}
+          <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TrendingUp size={20} color="#22c55e" />
+              </div>
+              <span style={{ fontSize: '13px', color: colors.textSecondary }}>Receitas do Mês</span>
+            </div>
+            <p style={{ fontSize: '24px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(summary.income)}</p>
+          </div>
+
+          {/* Despesas do Mês */}
+          <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TrendingDown size={20} color="#ef4444" />
+              </div>
+              <span style={{ fontSize: '13px', color: colors.textSecondary }}>Despesas do Mês</span>
+            </div>
+            <p style={{ fontSize: '24px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(summary.expenses)}</p>
+          </div>
+
+          {/* Saldo do Mês */}
+          <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Wallet size={20} color="#3b82f6" />
+              </div>
+              <span style={{ fontSize: '13px', color: colors.textSecondary }}>Saldo do Mês</span>
+            </div>
+            <p style={{ fontSize: '24px', fontWeight: '700', color: summary.balance >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(summary.balance)}</p>
+          </div>
+
+          {/* Saldo Acumulado (Conta Corrente) */}
+          <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `2px solid ${summary.accumulatedBalance >= 0 ? '#22c55e' : '#ef4444'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: summary.accumulatedBalance >= 0 ? '#dcfce7' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Wallet size={20} color={summary.accumulatedBalance >= 0 ? '#22c55e' : '#ef4444'} />
+              </div>
+              <span style={{ fontSize: '13px', color: colors.textSecondary, fontWeight: '600' }}>Saldo Acumulado</span>
+            </div>
+            <p style={{ fontSize: '24px', fontWeight: '700', color: summary.accumulatedBalance >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(summary.accumulatedBalance)}</p>
+            {summary.previousBalance !== 0 && (
+              <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px' }}>
+                Saldo anterior: {formatCurrency(summary.previousBalance)}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Barra de ações e filtros */}
       <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', marginBottom: '24px', border: `1px solid ${colors.border}` }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
-          <Filter size={18} color={colors.textSecondary} />
-          <select
-            value={filter.type}
-            onChange={(e) => setFilter({ ...filter, type: e.target.value })}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
+            {/* Campo de Busca */}
+            <div style={{ position: 'relative' }}>
+              <Search size={16} color={colors.textSecondary} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="text"
+                placeholder="Buscar..."
+                value={filter.search}
+                onChange={(e) => setFilter({ ...filter, search: e.target.value })}
+                style={{
+                  padding: '8px 12px 8px 36px', borderRadius: '8px', border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px', width: '180px'
+                }}
+              />
+            </div>
+
+            {/* Filtro por Tipo */}
+            <select
+              value={filter.type}
+              onChange={(e) => setFilter({ ...filter, type: e.target.value })}
+              style={{
+                padding: '8px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`,
+                backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px'
+              }}
+            >
+              <option value="">Todos os tipos</option>
+              <option value="income">Receitas</option>
+              <option value="expense">Despesas</option>
+            </select>
+
+            {/* Filtro por Categoria */}
+            <select
+              value={filter.category}
+              onChange={(e) => setFilter({ ...filter, category: e.target.value })}
+              style={{
+                padding: '8px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`,
+                backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px'
+              }}
+            >
+              <option value="">Todas categorias</option>
+              <optgroup label="Receitas">
+                {incomeCategories.map(c => <option key={c.value} value={c.value}>{c.label || c.name}</option>)}
+              </optgroup>
+              <optgroup label="Despesas">
+                {expenseCategories.map(c => <option key={c.value} value={c.value}>{c.label || c.name}</option>)}
+              </optgroup>
+            </select>
+
+            {/* Limpar Filtros */}
+            {(filter.type || filter.category || filter.search) && (
+              <button
+                onClick={() => setFilter({ type: '', category: '', search: '' })}
+                style={{
+                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`,
+                  backgroundColor: 'transparent', color: colors.textSecondary, fontSize: '13px', cursor: 'pointer'
+                }}
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
+
+          {/* Botão Nova Transação */}
+          <button
+            onClick={() => { resetForm(); setEditingTransaction(null); setShowModal(true) }}
             style={{
-              padding: '8px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`,
-              backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px'
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px',
+              backgroundColor: '#3b82f6', color: 'white', border: 'none',
+              borderRadius: '8px', fontWeight: '500', cursor: 'pointer'
             }}
           >
-            <option value="">Todos os tipos</option>
-            <option value="income">Receitas</option>
-            <option value="expense">Despesas</option>
-          </select>
-          <select
-            value={filter.category}
-            onChange={(e) => setFilter({ ...filter, category: e.target.value })}
-            style={{
-              padding: '8px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`,
-              backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px'
-            }}
-          >
-            <option value="">Todas as categorias</option>
-            {[...categories.income, ...categories.expense].map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
+            <Plus size={18} />
+            Nova Transação
+          </button>
         </div>
       </div>
 
-      {/* Lista de Transações */}
-      <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          </div>
-        ) : transactions.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px', color: colors.textSecondary }}>
-            Nenhuma transação encontrada
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-                  <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>Data</th>
-                  <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>Descrição</th>
-                  <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>Categoria</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>Valor</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t) => (
-                  <tr key={t._id} style={{ borderBottom: `1px solid ${colors.border}` }}>
-                    <td style={{ padding: '12px 8px', fontSize: '14px', color: colors.text }}>{formatDate(t.date)}</td>
-                    <td style={{ padding: '12px 8px', color: colors.text }}>{t.description}</td>
-                    <td style={{ padding: '12px 8px' }}>
-                      <span style={{
-                        fontSize: '12px', padding: '4px 8px', borderRadius: '12px',
-                        backgroundColor: t.type === 'income' ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7') : (isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2'),
-                        color: t.type === 'income' ? '#22c55e' : '#ef4444'
-                      }}>
-                        {categoryLabels[t.category] || t.category}
-                      </span>
-                    </td>
-                    <td style={{
-                      padding: '12px 8px', textAlign: 'right', fontWeight: '500',
-                      color: t.type === 'income' ? '#22c55e' : '#ef4444'
-                    }}>
-                      {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <button
-                        onClick={() => openEditModal(t)}
-                        style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary }}
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(t._id)}
-                        style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, marginLeft: '8px' }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* Contador e Ordenação */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
+          {filteredTransactions.length} transação(ões) encontrada(s)
+        </span>
+        <SortToggle
+          sortOrder={sortOrder}
+          onToggle={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+          label="Data"
+        />
       </div>
+
+      {/* Lista de Transações */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '48px', color: colors.textSecondary }}>
+          Carregando...
+        </div>
+      ) : filteredTransactions.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '48px', color: colors.textSecondary, backgroundColor: colors.backgroundCard, borderRadius: '12px' }}>
+          <Wallet size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+          <p>Nenhuma transação encontrada para este período.</p>
+          <button
+            onClick={() => { resetForm(); setEditingTransaction(null); setShowModal(true) }}
+            style={{
+              marginTop: '16px', padding: '10px 20px', backgroundColor: '#3b82f6',
+              color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer'
+            }}
+          >
+            Adicionar Transação
+          </button>
+        </div>
+      ) : (
+        <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', overflow: 'hidden', border: `1px solid ${colors.border}` }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: isDark ? colors.border : '#f8fafc' }}>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Data</th>
+                <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Descrição</th>
+                <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Categoria</th>
+                <th style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Valor</th>
+                <th style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTransactions.map(t => (
+                <tr key={t._id} style={{ borderTop: `1px solid ${colors.border}` }}>
+                  <td style={{ padding: '12px 16px', color: colors.text, fontSize: '14px' }}>{formatDate(t.date)}</td>
+                  <td style={{ padding: '12px 8px', color: colors.text, fontSize: '14px' }}>{t.description || '-'}</td>
+                  <td style={{ padding: '12px 8px' }}>
+                    <span style={{
+                      padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
+                      backgroundColor: t.type === 'income' ? '#dcfce7' : '#fef2f2',
+                      color: t.type === 'income' ? '#166534' : '#991b1b'
+                    }}>
+                      {getCategoryLabel(t.category)}
+                    </span>
+                  </td>
+                  <td style={{
+                    padding: '12px 8px', textAlign: 'right', fontWeight: '600', fontSize: '14px',
+                    color: t.type === 'income' ? '#22c55e' : '#ef4444'
+                  }}>
+                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <button
+                      onClick={() => openEditModal(t)}
+                      disabled={deleting === t._id}
+                      style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, opacity: deleting === t._id ? 0.5 : 1 }}
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(t._id)}
+                      disabled={deleting === t._id}
+                      style={{ padding: '4px', background: 'none', border: 'none', cursor: deleting === t._id ? 'not-allowed' : 'pointer', color: deleting === t._id ? '#ef4444' : colors.textSecondary, marginLeft: '8px' }}
+                    >
+                      {deleting === t._id ? (
+                        <span className="animate-spin" style={{ width: '16px', height: '16px', border: '2px solid #ef4444', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }}></span>
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (
@@ -260,7 +449,7 @@ function Transactions() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, type: 'expense', category: 'alimentacao' })}
+                    onClick={() => setForm({ ...form, type: 'expense', category: getDefaultCategory('expense') })}
                     style={{
                       flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
                       border: form.type === 'expense' ? '2px solid #ef4444' : `1px solid ${colors.border}`,
@@ -272,7 +461,7 @@ function Transactions() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, type: 'income', category: 'salario' })}
+                    onClick={() => setForm({ ...form, type: 'income', category: getDefaultCategory('income') })}
                     style={{
                       flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
                       border: form.type === 'income' ? '2px solid #22c55e' : `1px solid ${colors.border}`,
@@ -296,8 +485,8 @@ function Transactions() {
                     color: colors.text, fontSize: '14px'
                   }}
                 >
-                  {categories[form.type].map(c => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
+                  {(form.type === 'income' ? incomeCategories : expenseCategories).map(c => (
+                    <option key={c.value} value={c.value}>{c.label || c.name}</option>
                   ))}
                 </select>
               </div>
@@ -310,6 +499,7 @@ function Transactions() {
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="Ex: Almoço no restaurante"
                   required
+                  maxLength={200}
                   style={{
                     width: '100%', padding: '10px 12px', borderRadius: '8px',
                     border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard,
@@ -324,6 +514,7 @@ function Transactions() {
                   type="number"
                   step="0.01"
                   min="0.01"
+                  max="999999999.99"
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                   placeholder="0,00"
@@ -355,23 +546,34 @@ function Transactions() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
+                  disabled={submitting}
                   style={{
                     flex: 1, padding: '12px', borderRadius: '8px',
                     border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard,
-                    color: colors.textSecondary, fontWeight: '500', cursor: 'pointer'
+                    color: colors.textSecondary, fontWeight: '500', cursor: submitting ? 'not-allowed' : 'pointer',
+                    opacity: submitting ? 0.6 : 1
                   }}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   style={{
                     flex: 1, padding: '12px', borderRadius: '8px',
-                    border: 'none', backgroundColor: '#3b82f6',
-                    color: 'white', fontWeight: '500', cursor: 'pointer'
+                    border: 'none', backgroundColor: submitting ? '#93c5fd' : '#3b82f6',
+                    color: 'white', fontWeight: '500', cursor: submitting ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                   }}
                 >
-                  {editingTransaction ? 'Salvar' : 'Adicionar'}
+                  {submitting ? (
+                    <>
+                      <span className="animate-spin" style={{ width: '16px', height: '16px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }}></span>
+                      Salvando...
+                    </>
+                  ) : (
+                    editingTransaction ? 'Salvar' : 'Adicionar'
+                  )}
                 </button>
               </div>
             </form>

@@ -80,4 +80,9 @@ debtSchema.virtual('progress').get(function() {
 
 debtSchema.set('toJSON', { virtuals: true });
 
+// Índices para otimização de queries
+debtSchema.index({ user: 1 });
+debtSchema.index({ user: 1, status: 1 });
+debtSchema.index({ user: 1, type: 1 });
+
 module.exports = mongoose.model('Debt', debtSchema);

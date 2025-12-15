@@ -24,8 +24,18 @@ function Register() {
       return
     }
 
-    if (password.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres')
+    if (password.length < 8) {
+      setError('A senha deve ter no mínimo 8 caracteres')
+      return
+    }
+
+    // Validate password strength (must match backend requirements)
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumber = /\d/.test(password)
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumber) {
+      setError('A senha deve conter letra maiúscula, minúscula e número')
       return
     }
 
@@ -191,7 +201,7 @@ function Register() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mín. 8 caracteres (A-Z, a-z, 0-9)"
                 required
                 style={{ ...inputStyle, paddingRight: '48px' }}
                 onFocus={(e) => {

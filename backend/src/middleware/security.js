@@ -2,10 +2,10 @@ const rateLimit = require('express-rate-limit')
 const helmet = require('helmet')
 const hpp = require('hpp')
 
-// Rate Limiter Geral - 100 requests por 15 minutos
+// Rate Limiter Geral - 1000 requests por 15 minutos (mais permissivo para desenvolvimento)
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100,
+  max: 1000,
   message: {
     status: 429,
     message: 'Muitas requisições. Tente novamente em 15 minutos.',
@@ -13,9 +13,9 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res, options) => {
+  handler: (req, res) => {
     console.log(`[RATE LIMIT] IP ${req.ip} excedeu limite geral`)
-    res.status(options.statusCode).json(options.message)
+    res.status(429).json({ message: 'Muitas requisições. Tente novamente em 15 minutos.' })
   }
 })
 
@@ -31,9 +31,9 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Não conta requisições bem-sucedidas
-  handler: (req, res, options) => {
+  handler: (req, res) => {
     console.log(`[SECURITY ALERT] IP ${req.ip} - Múltiplas tentativas de login`)
-    res.status(options.statusCode).json(options.message)
+    res.status(429).json({ message: 'Muitas tentativas de login. Conta temporariamente bloqueada.' })
   }
 })
 
@@ -46,9 +46,9 @@ const registerLimiter = rateLimit({
     message: 'Limite de cadastros atingido. Tente novamente em 1 hora.',
     retryAfter: '1 hora'
   },
-  handler: (req, res, options) => {
+  handler: (req, res) => {
     console.log(`[SECURITY ALERT] IP ${req.ip} - Múltiplos registros`)
-    res.status(options.statusCode).json(options.message)
+    res.status(429).json({ message: 'Limite de cadastros atingido. Tente novamente em 1 hora.' })
   }
 })
 
@@ -60,9 +60,9 @@ const passwordResetLimiter = rateLimit({
     status: 429,
     message: 'Muitas solicitações de reset de senha. Tente novamente em 1 hora.'
   },
-  handler: (req, res, options) => {
+  handler: (req, res) => {
     console.log(`[SECURITY ALERT] IP ${req.ip} - Múltiplos resets de senha`)
-    res.status(options.statusCode).json(options.message)
+    res.status(429).json({ message: 'Muitas solicitações de reset de senha. Tente novamente em 1 hora.' })
   }
 })
 

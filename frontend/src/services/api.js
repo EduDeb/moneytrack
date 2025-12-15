@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: 'http://localhost:3001/api',
+  timeout: 30000, // 30 seconds timeout to prevent hanging requests
   headers: {
     'Content-Type': 'application/json'
   }

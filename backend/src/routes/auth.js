@@ -21,7 +21,7 @@ const generateToken = (userId, isRefresh = false) => {
   const payload = {
     userId,
     type: isRefresh ? 'refresh' : 'access',
-    iat: Date.now()
+    iat: Math.floor(Date.now() / 1000) // JWT espera segundos Unix, não milissegundos
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -422,16 +422,29 @@ router.get('/me', protect, async (req, res) => {
 });
 
 // @route   POST /api/auth/logout
-// @desc    Logout (invalidar token no cliente)
+// @desc    Logout (invalidar token)
 router.post('/logout', protect, async (req, res) => {
   try {
-    console.log(`[AUTH] Logout: ${req.user._id}`);
+    const TokenBlacklist = require('../models/TokenBlacklist');
 
-    // TODO: Implementar blacklist de tokens se necessário
-    // await TokenBlacklist.create({ token: req.token, userId: req.user._id });
+    // Calculate token expiration time
+    const expiresAt = req.tokenExp
+      ? new Date(req.tokenExp * 1000)
+      : new Date(Date.now() + 24 * 60 * 60 * 1000); // Default 24h
+
+    // Blacklist the current token
+    await TokenBlacklist.blacklistToken(
+      req.token,
+      req.user._id,
+      expiresAt,
+      'logout'
+    );
+
+    console.log(`[AUTH] Logout com blacklist: ${req.user._id}`);
 
     res.json({ message: 'Logout realizado com sucesso' });
   } catch (error) {
+    console.error('[AUTH ERROR] Logout:', error.message);
     res.status(500).json({ message: 'Erro ao fazer logout' });
   }
 });

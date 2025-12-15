@@ -93,4 +93,9 @@ billSchema.virtual('daysUntilDue').get(function() {
 billSchema.set('toJSON', { virtuals: true })
 billSchema.set('toObject', { virtuals: true })
 
+// Índices para otimização de queries
+billSchema.index({ user: 1, currentMonth: 1, currentYear: 1 })
+billSchema.index({ user: 1, isPaid: 1, currentMonth: 1, currentYear: 1 })
+billSchema.index({ user: 1, dueDay: 1 })
+
 module.exports = mongoose.model('Bill', billSchema)

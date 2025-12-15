@@ -1,7 +1,9 @@
-import { useState, useEffect, useContext, useRef } from 'react'
+import { useState, useEffect, useContext, useRef, useMemo } from 'react'
 import api from '../services/api'
 import { Plus, Trash2, Edit2, X, Check, Home, Zap, Droplets, Wifi, Phone, Tv, Shield, CreditCard, Banknote, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
+import MonthSelector from '../components/MonthSelector'
+import SortToggle from '../components/SortToggle'
 
 const categoryConfig = {
   moradia: { label: 'Moradia', icon: Home, color: '#8b5cf6' },
@@ -27,12 +29,16 @@ const urgencyColors = {
 
 function Bills() {
   const { colors, isDark } = useContext(ThemeContext)
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [bills, setBills] = useState([])
   const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingBill, setEditingBill] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState('asc') // 'asc' = vencimento próximo, 'desc' = vencimento distante
 
   const [form, setForm] = useState({
     name: '',
@@ -54,15 +60,65 @@ function Bills() {
   const [isProcessing, setIsProcessing] = useState(false)
   const fileInputRef = useRef(null)
 
+  const handleMonthChange = (month, year) => {
+    setSelectedMonth(month)
+    setSelectedYear(year)
+  }
+
   useEffect(() => {
-    fetchBills()
-    fetchSummary()
-  }, [filter])
+    let isMounted = true
+    const abortController = new AbortController()
+
+    const fetchBillsInternal = async () => {
+      try {
+        const params = new URLSearchParams()
+        params.append('month', selectedMonth)
+        params.append('year', selectedYear)
+        if (filter !== 'all') params.append('status', filter)
+        const response = await api.get(`/bills?${params}`, { signal: abortController.signal })
+        if (isMounted) {
+          setBills(response.data.bills)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && isMounted) {
+          console.error('Erro ao carregar contas:', error)
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    const fetchSummaryInternal = async () => {
+      try {
+        const response = await api.get(`/bills/summary?month=${selectedMonth}&year=${selectedYear}`, { signal: abortController.signal })
+        if (isMounted) {
+          setSummary(response.data)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && isMounted) {
+          console.error('Erro ao carregar resumo:', error)
+        }
+      }
+    }
+
+    fetchBillsInternal()
+    fetchSummaryInternal()
+
+    return () => {
+      isMounted = false
+      abortController.abort()
+    }
+  }, [filter, selectedMonth, selectedYear])
 
   const fetchBills = async () => {
     try {
-      const params = filter !== 'all' ? `?status=${filter}` : ''
-      const response = await api.get(`/bills${params}`)
+      const params = new URLSearchParams()
+      params.append('month', selectedMonth)
+      params.append('year', selectedYear)
+      if (filter !== 'all') params.append('status', filter)
+      const response = await api.get(`/bills?${params}`)
       setBills(response.data.bills)
     } catch (error) {
       console.error('Erro ao carregar contas:', error)
@@ -73,7 +129,7 @@ function Bills() {
 
   const fetchSummary = async () => {
     try {
-      const response = await api.get('/bills/summary')
+      const response = await api.get(`/bills/summary?month=${selectedMonth}&year=${selectedYear}`)
       setSummary(response.data)
     } catch (error) {
       console.error('Erro ao carregar resumo:', error)
@@ -319,8 +375,14 @@ function Bills() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      {/* Header com título e seletor de mês */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>Contas a Pagar</h1>
+        <MonthSelector
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onChange={handleMonthChange}
+        />
         <div style={{ display: 'flex', gap: '12px' }}>
           <button
             onClick={openImportModal}
@@ -406,6 +468,18 @@ function Bills() {
         ))}
       </div>
 
+      {/* Contador e Ordenação */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
+          {bills.length} conta(s) encontrada(s)
+        </span>
+        <SortToggle
+          sortOrder={sortOrder}
+          onToggle={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+          label="Vencimento"
+        />
+      </div>
+
       {/* Lista de Contas */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary }}>Carregando...</div>
@@ -415,7 +489,7 @@ function Bills() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {bills.map((bill) => {
+          {[...bills].sort((a, b) => sortOrder === 'asc' ? a.dueDay - b.dueDay : b.dueDay - a.dueDay).map((bill) => {
             const cat = categoryConfig[bill.category] || categoryConfig.outros
             const urgency = getUrgencyColors(bill.urgency)
             const Icon = cat.icon

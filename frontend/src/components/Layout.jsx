@@ -59,23 +59,52 @@ function Layout() {
   }, [])
 
   useEffect(() => {
-    generateAndFetchNotifications()
-    // Atualizar notificações a cada 5 minutos
-    const interval = setInterval(fetchNotifications, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [])
+    let isMounted = true
+    const abortController = new AbortController()
 
-  const generateAndFetchNotifications = async () => {
-    try {
-      // Gera notificações inteligentes
-      await api.post('/notifications/generate')
-      // Busca todas as notificações
-      fetchNotifications()
-    } catch (error) {
-      console.error('Erro ao gerar notificações:', error)
-      fetchNotifications()
+    const fetchNotificationsInternal = async () => {
+      try {
+        const { data } = await api.get('/notifications?limit=10', {
+          signal: abortController.signal
+        })
+        if (isMounted) {
+          setNotifications(data.notifications || [])
+          setUnreadCount(data.unreadCount || 0)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && isMounted) {
+          console.error('Erro ao buscar notificações:', error)
+        }
+      }
     }
-  }
+
+    const generateAndFetch = async () => {
+      try {
+        await api.post('/notifications/generate', {}, {
+          signal: abortController.signal
+        })
+        if (isMounted) {
+          fetchNotificationsInternal()
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && isMounted) {
+          console.error('Erro ao gerar notificações:', error)
+          fetchNotificationsInternal()
+        }
+      }
+    }
+
+    generateAndFetch()
+    const interval = setInterval(() => {
+      if (isMounted) fetchNotificationsInternal()
+    }, 5 * 60 * 1000)
+
+    return () => {
+      isMounted = false
+      abortController.abort()
+      clearInterval(interval)
+    }
+  }, [])
 
   const fetchNotifications = async () => {
     try {
@@ -635,6 +664,7 @@ function Layout() {
         <main style={{
           flex: 1,
           padding: '1.5rem',
+          paddingBottom: '80px', // Espaço extra para o FAB não sobrepor conteúdo
           background: colors.background,
           overflowY: 'auto'
         }}>
@@ -648,37 +678,37 @@ function Layout() {
         className="fab-button"
         style={{
           position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          height: '44px',
-          paddingLeft: '14px',
-          paddingRight: '16px',
-          borderRadius: '22px',
+          bottom: '24px',
+          right: '24px',
+          height: '48px',
+          paddingLeft: '16px',
+          paddingRight: '18px',
+          borderRadius: '24px',
           background: primaryColor,
           color: 'white',
           border: 'none',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.1)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '6px',
+          gap: '8px',
           zIndex: 40,
           transition: 'all 0.2s ease',
           fontSize: '14px',
-          fontWeight: '500'
+          fontWeight: '600'
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = 'translateY(-2px)'
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.1)'
+          e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.25), 0 3px 6px rgba(0,0,0,0.15)'
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'translateY(0)'
-          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)'
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.1)'
         }}
         title="Lançamento Rápido"
       >
-        <Plus size={18} strokeWidth={2.5} />
+        <Plus size={20} strokeWidth={2.5} />
         <span>Novo</span>
       </button>
 

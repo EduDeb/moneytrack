@@ -103,24 +103,70 @@ router.post('/', async (req, res) => {
   try {
     const { category, limit, month, year } = req.body
 
-    const currentMonth = month || new Date().getMonth() + 1
-    const currentYear = year || new Date().getFullYear()
+    // Validações
+    if (!category || !category.trim()) {
+      return res.status(400).json({ message: 'Categoria é obrigatória' })
+    }
+    if (!limit || isNaN(parseFloat(limit)) || parseFloat(limit) <= 0) {
+      return res.status(400).json({ message: 'Limite deve ser um número maior que zero' })
+    }
+
+    const now = new Date()
+    const currentMonth = month ? parseInt(month) : now.getUTCMonth() + 1
+    const currentYear = year ? parseInt(year) : now.getUTCFullYear()
+
+    // Validar mês e ano
+    if (currentMonth < 1 || currentMonth > 12) {
+      return res.status(400).json({ message: 'Mês inválido' })
+    }
+    if (currentYear < 2000 || currentYear > 2100) {
+      return res.status(400).json({ message: 'Ano inválido' })
+    }
 
     // Tentar atualizar se existir, senão criar
     const budget = await Budget.findOneAndUpdate(
       {
         user: req.user._id,
-        category,
+        category: category.trim(),
         month: currentMonth,
         year: currentYear
       },
-      { limit },
+      { limit: parseFloat(limit) },
       { new: true, upsert: true, runValidators: true }
     )
 
     res.status(201).json({ budget })
   } catch (error) {
     res.status(400).json({ message: 'Erro ao salvar orçamento', error: error.message })
+  }
+})
+
+// @route   PUT /api/budget/:id
+// @desc    Atualizar limite do orçamento
+router.put('/:id', async (req, res) => {
+  try {
+    const { limit } = req.body
+
+    if (!limit || isNaN(parseFloat(limit)) || parseFloat(limit) <= 0) {
+      return res.status(400).json({ message: 'Limite deve ser um número maior que zero' })
+    }
+
+    const budget = await Budget.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        user: req.user._id
+      },
+      { limit: parseFloat(limit) },
+      { new: true, runValidators: true }
+    )
+
+    if (!budget) {
+      return res.status(404).json({ message: 'Orçamento não encontrado' })
+    }
+
+    res.json({ budget })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao atualizar orçamento', error: error.message })
   }
 })
 

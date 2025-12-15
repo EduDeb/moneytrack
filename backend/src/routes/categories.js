@@ -16,7 +16,7 @@ const DEFAULT_CATEGORIES = {
   ],
   expense: [
     { name: 'Alimentação', icon: 'Utensils', color: '#f97316' },
-    { name: 'Transporte', icon: 'Car', color: '#3b82f6' },
+    { name: 'Colaboradores', icon: 'Users', color: '#3b82f6' },
     { name: 'Moradia', icon: 'Home', color: '#8b5cf6' },
     { name: 'Saúde', icon: 'Heart', color: '#ef4444' },
     { name: 'Educação', icon: 'GraduationCap', color: '#22c55e' },

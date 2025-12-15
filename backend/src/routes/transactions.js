@@ -2,22 +2,30 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const Transaction = require('../models/Transaction');
-const { protect } = require('../middleware/auth');
+const { protect, validateObjectId } = require('../middleware/auth');
 
 // Todas as rotas requerem autenticação
 router.use(protect);
 
 // @route   GET /api/transactions
-// @desc    Obter todas as transações do usuário
+// @desc    Obter todas as transações do usuário (com filtro por mês/ano)
 router.get('/', async (req, res) => {
   try {
-    const { type, category, startDate, endDate, limit = 50, page = 1 } = req.query;
+    const { type, category, startDate, endDate, month, year, limit = 100, page = 1 } = req.query;
 
     const query = { user: req.user._id };
 
     if (type) query.type = type;
     if (category) query.category = category;
-    if (startDate || endDate) {
+
+    // Filtro por mês/ano específico
+    if (month && year) {
+      const m = parseInt(month);
+      const y = parseInt(year);
+      const monthStart = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
+      const monthEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+      query.date = { $gte: monthStart, $lte: monthEnd };
+    } else if (startDate || endDate) {
       query.date = {};
       if (startDate) query.date.$gte = new Date(startDate);
       if (endDate) query.date.$lte = new Date(endDate);
@@ -42,27 +50,26 @@ router.get('/', async (req, res) => {
 });
 
 // @route   GET /api/transactions/summary
-// @desc    Obter resumo financeiro
+// @desc    Obter resumo financeiro com saldo acumulado (como conta corrente)
 router.get('/summary', async (req, res) => {
   try {
     const { month, year } = req.query;
 
     let startDate, endDate;
-    if (month && year) {
-      // Usar UTC para consistência com datas armazenadas no banco
-      startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-      endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-    } else {
-      const now = new Date();
-      startDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0));
-      endDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999));
-    }
+    const m = month ? parseInt(month) : new Date().getMonth() + 1;
+    const y = year ? parseInt(year) : new Date().getFullYear();
 
+    // Período do mês selecionado
+    startDate = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
+    endDate = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+
+    // Buscar transações do mês atual
     const transactions = await Transaction.find({
       user: req.user._id,
       date: { $gte: startDate, $lte: endDate }
     });
 
+    // Calcular receitas e despesas do mês
     const income = transactions
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -71,6 +78,29 @@ router.get('/summary', async (req, res) => {
       .filter(t => t.type === 'expense')
       .reduce((sum, t) => sum + t.amount, 0);
 
+    const monthBalance = income - expenses;
+
+    // SALDO ACUMULADO (como conta corrente)
+    // Buscar TODAS as transações anteriores ao mês selecionado
+    const previousTransactions = await Transaction.find({
+      user: req.user._id,
+      date: { $lt: startDate }
+    });
+
+    const previousIncome = previousTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const previousExpenses = previousTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const previousBalance = previousIncome - previousExpenses;
+
+    // Saldo total acumulado (saldo anterior + saldo do mês atual)
+    const accumulatedBalance = previousBalance + monthBalance;
+
+    // Categorias do mês
     const byCategory = transactions.reduce((acc, t) => {
       if (!acc[t.category]) {
         acc[t.category] = 0;
@@ -80,11 +110,18 @@ router.get('/summary', async (req, res) => {
     }, {});
 
     res.json({
-      income,
-      expenses,
-      balance: income - expenses,
+      income,                    // Receitas do mês
+      expenses,                  // Despesas do mês
+      balance: monthBalance,     // Saldo do mês (receitas - despesas)
+      previousBalance,           // Saldo acumulado dos meses anteriores
+      accumulatedBalance,        // Saldo total (como conta corrente)
       byCategory,
-      period: { startDate, endDate }
+      period: {
+        month: m,
+        year: y,
+        startDate,
+        endDate
+      }
     });
   } catch (error) {
     res.status(500).json({ message: 'Erro no servidor', error: error.message });
@@ -234,7 +271,7 @@ router.post('/', [
 
 // @route   PUT /api/transactions/:id
 // @desc    Atualizar transação
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateObjectId(), async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
       _id: req.params.id,
@@ -259,7 +296,7 @@ router.put('/:id', async (req, res) => {
 
 // @route   DELETE /api/transactions/:id
 // @desc    Deletar transação
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateObjectId(), async (req, res) => {
   try {
     const transaction = await Transaction.findOneAndDelete({
       _id: req.params.id,

@@ -68,4 +68,9 @@ investmentSchema.virtual('profitPercentage').get(function() {
 
 investmentSchema.set('toJSON', { virtuals: true });
 
+// Índices para otimização de queries
+investmentSchema.index({ user: 1 });
+investmentSchema.index({ user: 1, type: 1 });
+investmentSchema.index({ user: 1, ticker: 1 });
+
 module.exports = mongoose.model('Investment', investmentSchema);

@@ -1,37 +1,37 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo } from 'react'
 import api from '../services/api'
-import { Plus, Trash2, X, Target, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Target, AlertTriangle, CheckCircle } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
-
-const categories = [
-  { value: 'alimentacao', label: 'Alimentação', color: '#f97316' },
-  { value: 'transporte', label: 'Transporte', color: '#3b82f6' },
-  { value: 'moradia', label: 'Moradia', color: '#8b5cf6' },
-  { value: 'saude', label: 'Saúde', color: '#ef4444' },
-  { value: 'educacao', label: 'Educação', color: '#06b6d4' },
-  { value: 'lazer', label: 'Lazer', color: '#ec4899' },
-  { value: 'compras', label: 'Compras', color: '#f59e0b' },
-  { value: 'contas', label: 'Contas', color: '#64748b' },
-  { value: 'outros_despesa', label: 'Outros', color: '#6b7280' }
-]
-
-const categoryMap = Object.fromEntries(categories.map(c => [c.value, c]))
+import { useCategories } from '../contexts/CategoriesContext'
+import MonthSelector from '../components/MonthSelector'
+import SortToggle from '../components/SortToggle'
 
 function Budget() {
   const { colors, isDark } = useContext(ThemeContext)
+  const { expenseCategories: categories, categoryMap, getCategoryLabel } = useCategories()
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [budgetStatus, setBudgetStatus] = useState([])
   const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ category: 'alimentacao', limit: '' })
+  const [editingBudget, setEditingBudget] = useState(null)
+  const [form, setForm] = useState({ category: '', limit: '' })
+  const [sortOrder, setSortOrder] = useState('desc') // 'desc' = mais gasto, 'asc' = menos gasto
+
+  const handleMonthChange = (month, year) => {
+    setSelectedMonth(month)
+    setSelectedYear(year)
+  }
 
   useEffect(() => {
     fetchBudgetStatus()
-  }, [])
+  }, [selectedMonth, selectedYear])
 
   const fetchBudgetStatus = async () => {
     try {
-      const response = await api.get('/budget/status')
+      const response = await api.get(`/budget/status?month=${selectedMonth}&year=${selectedYear}`)
       setBudgetStatus(response.data.budgets)
       setSummary(response.data.summary)
     } catch (error) {
@@ -44,16 +44,33 @@ function Budget() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      await api.post('/budget', {
-        category: form.category,
-        limit: parseFloat(form.limit)
-      })
+      if (editingBudget) {
+        // Editing existing budget
+        await api.put(`/budget/${editingBudget._id}`, {
+          limit: parseFloat(form.limit)
+        })
+      } else {
+        // Creating new budget
+        await api.post('/budget', {
+          category: form.category,
+          limit: parseFloat(form.limit),
+          month: selectedMonth,
+          year: selectedYear
+        })
+      }
       setShowModal(false)
-      setForm({ category: 'alimentacao', limit: '' })
+      setEditingBudget(null)
+      setForm({ category: '', limit: '' })
       fetchBudgetStatus()
     } catch (error) {
       console.error('Erro ao salvar orçamento:', error)
     }
+  }
+
+  const openEditModal = (budget) => {
+    setEditingBudget(budget)
+    setForm({ category: budget.category, limit: budget.limit.toString() })
+    setShowModal(true)
   }
 
   const handleDelete = async (id) => {
@@ -80,13 +97,19 @@ function Budget() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      {/* Header com título e seletor de mês */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>Orçamento Mensal</h1>
           <p style={{ fontSize: '14px', color: colors.textSecondary, marginTop: '4px' }}>
             Defina limites de gastos por categoria
           </p>
         </div>
+        <MonthSelector
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onChange={handleMonthChange}
+        />
         {availableCategories.length > 0 && (
           <button
             onClick={() => { setForm({ category: availableCategories[0].value, limit: '' }); setShowModal(true) }}
@@ -168,6 +191,20 @@ function Budget() {
         </div>
       </div>
 
+      {/* Contador e Ordenação */}
+      {budgetStatus.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
+            {budgetStatus.length} orçamento(s) definido(s)
+          </span>
+          <SortToggle
+            sortOrder={sortOrder}
+            onToggle={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+            label="Gasto"
+          />
+        </div>
+      )}
+
       {/* Lista de Orçamentos */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary }}>Carregando...</div>
@@ -188,8 +225,8 @@ function Budget() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {budgetStatus.map((budget) => {
-            const cat = categoryMap[budget.category] || { label: budget.category, color: '#6b7280' }
+          {[...budgetStatus].sort((a, b) => sortOrder === 'desc' ? b.spent - a.spent : a.spent - b.spent).map((budget) => {
+            const cat = categoryMap[budget.category] || { label: budget.category, name: budget.category, color: '#6b7280' }
             const StatusIcon = budget.status === 'exceeded' ? AlertTriangle : budget.status === 'warning' ? AlertTriangle : CheckCircle
             const statusColor = budget.status === 'exceeded' ? '#ef4444' : budget.status === 'warning' ? '#f59e0b' : '#22c55e'
 
@@ -220,24 +257,40 @@ function Budget() {
                       <StatusIcon size={20} color={statusColor} />
                     </div>
                     <div>
-                      <h3 style={{ fontWeight: '600', color: colors.text }}>{cat.label}</h3>
+                      <h3 style={{ fontWeight: '600', color: colors.text }}>{cat.label || cat.name}</h3>
                       <p style={{ fontSize: '12px', color: colors.textSecondary }}>
                         Limite: {formatCurrency(budget.limit)}
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(budget._id)}
-                    style={{
-                      padding: '6px',
-                      borderRadius: '6px',
-                      backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2',
-                      border: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Trash2 size={16} color="#ef4444" />
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => openEditModal(budget)}
+                      style={{
+                        padding: '6px',
+                        borderRadius: '6px',
+                        backgroundColor: isDark ? 'rgba(59,130,246,0.2)' : '#dbeafe',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                      title="Editar limite"
+                    >
+                      <Edit2 size={16} color="#3b82f6" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(budget._id)}
+                      style={{
+                        padding: '6px',
+                        borderRadius: '6px',
+                        backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                      title="Remover orçamento"
+                    >
+                      <Trash2 size={16} color="#ef4444" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Info de gastos */}
@@ -302,8 +355,10 @@ function Budget() {
             border: `1px solid ${colors.border}`
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.text }}>Definir Limite</h2>
-              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.text }}>
+                {editingBudget ? 'Editar Limite' : 'Definir Limite'}
+              </h2>
+              <button onClick={() => { setShowModal(false); setEditingBudget(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <X size={20} color={colors.textSecondary} />
               </button>
             </div>
@@ -313,23 +368,37 @@ function Budget() {
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '8px' }}>
                   Categoria
                 </label>
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  style={{
+                {editingBudget ? (
+                  <div style={{
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: '8px',
                     border: `1px solid ${colors.border}`,
                     fontSize: '14px',
-                    backgroundColor: colors.backgroundCard,
+                    backgroundColor: isDark ? colors.border : '#f3f4f6',
                     color: colors.text
-                  }}
-                >
-                  {availableCategories.map(c => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
+                  }}>
+                    {categoryMap[form.category]?.label || categoryMap[form.category]?.name || form.category}
+                  </div>
+                ) : (
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      fontSize: '14px',
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text
+                    }}
+                  >
+                    {availableCategories.map(c => (
+                      <option key={c.value} value={c.value}>{c.label || c.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div style={{ marginBottom: '20px' }}>
@@ -340,6 +409,7 @@ function Budget() {
                   type="number"
                   step="0.01"
                   min="1"
+                  max="999999999.99"
                   value={form.limit}
                   onChange={(e) => setForm({ ...form, limit: e.target.value })}
                   placeholder="0,00"
@@ -359,7 +429,7 @@ function Budget() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { setShowModal(false); setEditingBudget(null) }}
                   style={{
                     flex: 1,
                     padding: '12px',

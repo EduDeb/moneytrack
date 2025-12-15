@@ -10,15 +10,9 @@ import {
   PieChart, Pie, Cell, LineChart, Line, CartesianGrid
 } from 'recharts'
 import { ThemeContext } from '../contexts/ThemeContext'
+import { useCategories } from '../contexts/CategoriesContext'
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316']
-
-const categoryLabels = {
-  salario: 'Salário', freelance: 'Freelance', investimentos: 'Investimentos',
-  outros_receita: 'Outros', alimentacao: 'Alimentação', transporte: 'Transporte',
-  moradia: 'Moradia', saude: 'Saúde', educacao: 'Educação', lazer: 'Lazer',
-  compras: 'Compras', contas: 'Contas', outros_despesa: 'Outros'
-}
 
 const periodOptions = [
   { value: 'today', label: 'Hoje' },
@@ -37,6 +31,7 @@ const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
 
 function Reports() {
   const { colors, isDark } = useContext(ThemeContext)
+  const { categoryLabels, getCategoryLabel } = useCategories()
   const [period, setPeriod] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())

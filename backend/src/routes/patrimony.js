@@ -35,10 +35,10 @@ router.get('/summary', async (req, res) => {
     // 4. Patrimônio líquido
     const netWorth = accountsTotal + investmentsTotal - debtsTotal
 
-    // 5. Variação do mês (transações do mês atual)
+    // 5. Variação do mês (transações do mês atual) - usar UTC para consistência
     const today = new Date()
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    const startOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0, 23, 59, 59, 999))
 
     const monthTransactions = await Transaction.aggregate([
       {
@@ -60,10 +60,12 @@ router.get('/summary', async (req, res) => {
     const monthBalance = monthIncome - monthExpense
 
     // 6. Composição do patrimônio
+    // Use total assets (accounts + investments) for percentage calculation
+    const totalAssets = accountsTotal + investmentsTotal
     const composition = {
       accounts: {
         total: accountsTotal,
-        percentage: netWorth > 0 ? ((accountsTotal / (accountsTotal + investmentsTotal)) * 100) : 0,
+        percentage: totalAssets > 0 ? ((accountsTotal / totalAssets) * 100) : 0,
         items: accounts.map(a => ({
           name: a.name,
           type: a.type,
@@ -73,7 +75,7 @@ router.get('/summary', async (req, res) => {
       },
       investments: {
         total: investmentsTotal,
-        percentage: netWorth > 0 ? ((investmentsTotal / (accountsTotal + investmentsTotal)) * 100) : 0,
+        percentage: totalAssets > 0 ? ((investmentsTotal / totalAssets) * 100) : 0,
         items: investments.map(i => ({
           name: i.name,
           type: i.type,
@@ -82,6 +84,7 @@ router.get('/summary', async (req, res) => {
       },
       debts: {
         total: debtsTotal,
+        percentage: totalAssets > 0 ? ((debtsTotal / totalAssets) * 100) : 0,
         items: debts.map(d => ({
           name: d.name,
           type: d.type,
@@ -111,14 +114,15 @@ router.get('/health-score', async (req, res) => {
   try {
     const userId = req.user._id
     const today = new Date()
-    const currentMonth = today.getMonth() + 1
-    const currentYear = today.getFullYear()
+    // Usar UTC para consistência com datas armazenadas no banco
+    const currentMonth = today.getUTCMonth() + 1
+    const currentYear = today.getUTCFullYear()
 
     let score = 100
     const factors = []
 
     // 1. Verificar reserva de emergência (pelo menos 3x a despesa média mensal)
-    const lastSixMonths = new Date(today.getFullYear(), today.getMonth() - 6, 1)
+    const lastSixMonths = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 6, 1, 0, 0, 0, 0))
     const avgExpenses = await Transaction.aggregate([
       {
         $match: {
@@ -154,26 +158,36 @@ router.get('/health-score', async (req, res) => {
     }
 
     // 2. Verificar orçamentos (está dentro do limite?)
+    // Otimizado: buscar orçamentos e gastos em apenas 2 queries ao invés de N+1
     const budgets = await Budget.find({ user: userId, month: currentMonth, year: currentYear })
+
+    // Buscar todos os gastos por categoria em uma única query
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
+
+    const spentByCategory = await Transaction.aggregate([
+      {
+        $match: {
+          user: userId,
+          type: 'expense',
+          date: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      {
+        $group: {
+          _id: '$category',
+          total: { $sum: '$amount' }
+        }
+      }
+    ])
+
+    // Converter para objeto para acesso rápido
+    const spentMap = {}
+    spentByCategory.forEach(s => { spentMap[s._id] = s.total })
+
     let budgetsOverLimit = 0
-
     for (const budget of budgets) {
-      const spent = await Transaction.aggregate([
-        {
-          $match: {
-            user: userId,
-            type: 'expense',
-            category: budget.category,
-            date: {
-              $gte: new Date(currentYear, currentMonth - 1, 1),
-              $lte: new Date(currentYear, currentMonth, 0)
-            }
-          }
-        },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ])
-
-      if ((spent[0]?.total || 0) > budget.limit) {
+      if ((spentMap[budget.category] || 0) > budget.limit) {
         budgetsOverLimit++
       }
     }
@@ -299,9 +313,9 @@ router.get('/cashflow-forecast', async (req, res) => {
     // Buscar recorrências ativas
     const recurring = await Recurring.find({ user: userId, isActive: true })
 
-    // Buscar contas a pagar do mês
-    const currentMonth = today.getMonth() + 1
-    const currentYear = today.getFullYear()
+    // Buscar contas a pagar do mês (usar UTC para consistência)
+    const currentMonth = today.getUTCMonth() + 1
+    const currentYear = today.getUTCFullYear()
     const bills = await Bill.find({
       user: userId,
       isPaid: false,

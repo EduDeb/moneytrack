@@ -43,24 +43,9 @@ import OnboardingWizard from '../components/OnboardingWizard'
 import InfoTooltip from '../components/InfoTooltip'
 import TipCard from '../components/TipCard'
 import GuidedTour, { defaultDashboardSteps } from '../components/GuidedTour'
+import { useCategories } from '../contexts/CategoriesContext'
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-
-const categoryLabels = {
-  salario: 'Salário',
-  freelance: 'Freelance',
-  investimentos: 'Investimentos',
-  outros_receita: 'Outros',
-  alimentacao: 'Alimentação',
-  transporte: 'Transporte',
-  moradia: 'Moradia',
-  saude: 'Saúde',
-  educacao: 'Educação',
-  lazer: 'Lazer',
-  compras: 'Compras',
-  contas: 'Contas',
-  outros_despesa: 'Outros'
-}
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -71,6 +56,7 @@ function Dashboard() {
   const navigate = useNavigate()
   const { colors, isDark } = useContext(ThemeContext)
   const { user } = useAuth()
+  const { categoryLabels, getCategoryLabel } = useCategories()
   const now = new Date()
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
@@ -87,6 +73,7 @@ function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [accountsCount, setAccountsCount] = useState(null)
   const [showTour, setShowTour] = useState(false)
+  const [payingBill, setPayingBill] = useState(null)
 
   const isCurrentMonth = selectedMonth === (now.getMonth() + 1) && selectedYear === now.getFullYear()
 
@@ -114,13 +101,91 @@ function Dashboard() {
   }
 
   useEffect(() => {
-    fetchData()
-    checkOnboarding()
+    let isMounted = true
+    const abortController = new AbortController()
+
+    // Resetar dados do mês quando mudar de mês para evitar mostrar dados antigos
+    setLoading(true)
+    setTransactionSummary(null)
+    setAnalytics(null)
+    setBudgetStatus(null)
+
+    const fetchDataInternal = async () => {
+      try {
+        const params = `?month=${selectedMonth}&year=${selectedYear}`
+        const config = { signal: abortController.signal }
+
+        const [transRes, invRes, debtRes, billsRes, analyticsRes, budgetRes, patrimonyRes, healthRes, cashflowRes] = await Promise.all([
+          api.get(`/transactions/summary${params}`, config),
+          api.get('/investments/summary', config),
+          api.get('/debts/summary', config),
+          api.get('/bills/upcoming', config),
+          api.get(`/transactions/analytics${params}`, config),
+          api.get(`/budget/status${params}`, config),
+          api.get('/patrimony/summary', config),
+          api.get('/patrimony/health-score', config),
+          api.get('/patrimony/cashflow-forecast', config)
+        ])
+
+        if (isMounted) {
+          setTransactionSummary(transRes.data)
+          setInvestmentSummary(invRes.data)
+          setDebtSummary(debtRes.data)
+          setUpcomingBills(billsRes.data.bills || [])
+          setAnalytics(analyticsRes.data)
+          setBudgetStatus(budgetRes.data)
+          setPatrimony(patrimonyRes.data)
+          setHealthScore(healthRes.data)
+          setCashflowForecast(cashflowRes.data)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && isMounted) {
+          console.error('Erro ao carregar dados:', error)
+          // Resetar para valores vazios em caso de erro para não mostrar dados antigos
+          setTransactionSummary({ income: 0, expenses: 0, balance: 0, accumulatedBalance: 0 })
+          setAnalytics(null)
+          setBudgetStatus(null)
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    const checkOnboardingInternal = async () => {
+      const onboardingCompleted = localStorage.getItem('onboardingCompleted')
+      if (onboardingCompleted) return
+
+      try {
+        const res = await api.get('/accounts', { signal: abortController.signal })
+        if (isMounted) {
+          setAccountsCount(res.data.length)
+          if (res.data.length === 0) {
+            setShowOnboarding(true)
+          }
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Erro ao verificar contas:', error)
+        }
+      }
+    }
+
+    fetchDataInternal()
+    checkOnboardingInternal()
 
     // Listener para atualizar quando adicionar transação pelo botão rápido
-    const handleTransactionAdded = () => fetchData()
+    const handleTransactionAdded = () => {
+      if (isMounted) fetchDataInternal()
+    }
     window.addEventListener('transaction-added', handleTransactionAdded)
-    return () => window.removeEventListener('transaction-added', handleTransactionAdded)
+
+    return () => {
+      isMounted = false
+      abortController.abort()
+      window.removeEventListener('transaction-added', handleTransactionAdded)
+    }
   }, [selectedMonth, selectedYear])
 
   useEffect(() => {
@@ -131,18 +196,35 @@ function Dashboard() {
     }
   }, [])
 
-  const checkOnboarding = async () => {
-    const onboardingCompleted = localStorage.getItem('onboardingCompleted')
-    if (onboardingCompleted) return
-
+  // Função externa para recarregar dados (usada em callbacks)
+  const fetchData = async () => {
     try {
-      const res = await api.get('/accounts')
-      setAccountsCount(res.data.length)
-      if (res.data.length === 0) {
-        setShowOnboarding(true)
-      }
+      const params = `?month=${selectedMonth}&year=${selectedYear}`
+      const [transRes, invRes, debtRes, billsRes, analyticsRes, budgetRes, patrimonyRes, healthRes, cashflowRes] = await Promise.all([
+        api.get(`/transactions/summary${params}`),
+        api.get('/investments/summary'),
+        api.get('/debts/summary'),
+        api.get('/bills/upcoming'),
+        api.get(`/transactions/analytics${params}`),
+        api.get(`/budget/status${params}`),
+        api.get('/patrimony/summary'),
+        api.get('/patrimony/health-score'),
+        api.get('/patrimony/cashflow-forecast')
+      ])
+
+      setTransactionSummary(transRes.data)
+      setInvestmentSummary(invRes.data)
+      setDebtSummary(debtRes.data)
+      setUpcomingBills(billsRes.data.bills || [])
+      setAnalytics(analyticsRes.data)
+      setBudgetStatus(budgetRes.data)
+      setPatrimony(patrimonyRes.data)
+      setHealthScore(healthRes.data)
+      setCashflowForecast(cashflowRes.data)
     } catch (error) {
-      console.error('Erro ao verificar contas:', error)
+      console.error('Erro ao carregar dados:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -155,8 +237,8 @@ function Dashboard() {
   const getFactorAction = (factorName, status) => {
     const actions = {
       'Reserva de emergência': {
-        route: '/goals',
-        label: 'Criar Reserva',
+        route: '/accounts',
+        label: 'Adicionar Reserva',
         icon: Plus,
         show: status !== 'excellent'
       },
@@ -208,39 +290,11 @@ function Dashboard() {
     transition: 'all 0.2s'
   }
 
-  const fetchData = async () => {
-    try {
-      const params = `?month=${selectedMonth}&year=${selectedYear}`
-      const [transRes, invRes, debtRes, billsRes, analyticsRes, budgetRes, patrimonyRes, healthRes, cashflowRes] = await Promise.all([
-        api.get(`/transactions/summary${params}`),
-        api.get('/investments/summary'),
-        api.get('/debts/summary'),
-        api.get('/bills/upcoming'),
-        api.get(`/transactions/analytics${params}`),
-        api.get(`/budget/status${params}`),
-        api.get('/patrimony/summary'),
-        api.get('/patrimony/health-score'),
-        api.get('/patrimony/cashflow-forecast')
-      ])
-
-      setTransactionSummary(transRes.data)
-      setInvestmentSummary(invRes.data)
-      setDebtSummary(debtRes.data)
-      setUpcomingBills(billsRes.data.bills || [])
-      setAnalytics(analyticsRes.data)
-      setBudgetStatus(budgetRes.data)
-      setPatrimony(patrimonyRes.data)
-      setHealthScore(healthRes.data)
-      setCashflowForecast(cashflowRes.data)
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handlePayBill = async (bill) => {
     if (!confirm(`Confirma pagamento de ${formatCurrency(bill.amount)} para "${bill.name}"?`)) return
+    if (payingBill) return
+
+    setPayingBill(bill._id)
     try {
       await api.post(`/bills/${bill._id}/pay`, {
         isFromRecurring: bill.isFromRecurring || false
@@ -248,6 +302,9 @@ function Dashboard() {
       fetchData()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
+      alert('Erro ao pagar conta. Tente novamente.')
+    } finally {
+      setPayingBill(null)
     }
   }
 
@@ -323,6 +380,7 @@ function Dashboard() {
         }}>
           <button
             onClick={goToPreviousMonth}
+            aria-label="Mês anterior"
             style={{
               padding: '6px',
               borderRadius: '8px',
@@ -351,6 +409,7 @@ function Dashboard() {
 
           <button
             onClick={goToNextMonth}
+            aria-label="Próximo mês"
             style={{
               padding: '6px',
               borderRadius: '8px',
@@ -367,6 +426,7 @@ function Dashboard() {
           {!isCurrentMonth && (
             <button
               onClick={goToCurrentMonth}
+              aria-label="Ir para o mês atual"
               style={{
                 marginLeft: '8px',
                 padding: '6px 12px',
@@ -429,16 +489,32 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="card">
+        {/* Saldo Acumulado - Soma de todas as transações */}
+        <div className="card" style={{
+          border: `2px solid ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? '#22c55e' : '#ef4444'}`,
+          background: (transactionSummary?.accumulatedBalance || 0) >= 0
+            ? (isDark ? 'rgba(34, 197, 94, 0.1)' : '#f0fdf4')
+            : (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2')
+        }}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Patrimônio</p>
-              <p className="text-2xl font-bold text-purple-600">
-                {formatCurrency(investmentSummary?.currentValue)}
+              <p className="text-sm" style={{ color: colors.textSecondary, fontWeight: '600' }}>
+                Saldo Acumulado
+                <InfoTooltip position="right">
+                  Soma de todas as receitas menos despesas desde o início. Funciona como o saldo de uma conta corrente.
+                </InfoTooltip>
               </p>
+              <p className={`text-2xl font-bold ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(transactionSummary?.accumulatedBalance)}
+              </p>
+              {transactionSummary?.previousBalance !== 0 && transactionSummary?.previousBalance !== undefined && (
+                <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px' }}>
+                  Meses anteriores: {formatCurrency(transactionSummary?.previousBalance)}
+                </p>
+              )}
             </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <PiggyBank className="text-purple-600" size={24} />
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+              <PiggyBank className={(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'} size={24} />
             </div>
           </div>
         </div>
@@ -1225,22 +1301,34 @@ function Dashboard() {
                     <span style={{ fontWeight: '700', color: style.text }}>{formatCurrency(bill.amount)}</span>
                     <button
                       onClick={() => handlePayBill(bill)}
+                      disabled={payingBill === bill._id}
                       style={{
                         padding: '6px 12px',
                         borderRadius: '6px',
-                        backgroundColor: '#22c55e',
+                        backgroundColor: payingBill === bill._id ? '#86efac' : '#22c55e',
                         color: 'white',
                         border: 'none',
                         fontSize: '12px',
                         fontWeight: '500',
-                        cursor: 'pointer',
+                        cursor: payingBill === bill._id ? 'not-allowed' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '4px',
+                        minWidth: '80px',
+                        justifyContent: 'center'
                       }}
                     >
-                      <Check size={14} />
-                      Pagar
+                      {payingBill === bill._id ? (
+                        <>
+                          <span className="animate-spin" style={{ width: '14px', height: '14px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }}></span>
+                          Pagando...
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} />
+                          Pagar
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const Account = require('../models/Account')
 const Transaction = require('../models/Transaction')
-const { protect } = require('../middleware/auth')
+const { protect, validateObjectId } = require('../middleware/auth')
 
 router.use(protect)
 
@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
 
     res.json({ accounts: accountsWithBalance })
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao busdrive contas', error: error.message })
+    res.status(500).json({ message: 'Erro ao buscar contas', error: error.message })
   }
 })
 
@@ -99,7 +99,7 @@ router.get('/summary', async (req, res) => {
 
 // @route   GET /api/accounts/:id
 // @desc    Obter uma conta específica
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateObjectId(), async (req, res) => {
   try {
     const account = await Account.findOne({
       _id: req.params.id,
@@ -153,7 +153,7 @@ router.post('/', async (req, res) => {
 
 // @route   PUT /api/accounts/:id
 // @desc    Atualizar conta
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateObjectId(), async (req, res) => {
   try {
     const account = await Account.findOne({
       _id: req.params.id,
@@ -270,7 +270,7 @@ router.post('/transfer', async (req, res) => {
 
 // @route   DELETE /api/accounts/:id
 // @desc    Desativar conta (soft delete)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateObjectId(), async (req, res) => {
   try {
     const account = await Account.findOne({
       _id: req.params.id,

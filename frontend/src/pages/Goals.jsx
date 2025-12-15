@@ -1,10 +1,11 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo } from 'react'
 import api from '../services/api'
 import {
   Target, Plus, Trash2, Edit2, X, PiggyBank, TrendingDown, TrendingUp,
   Banknote, CreditCard, Calendar, DollarSign, Check
 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
+import SortToggle from '../components/SortToggle'
 
 const goalTypes = [
   { value: 'savings', label: 'Poupança', icon: PiggyBank, color: '#22c55e', description: 'Juntar dinheiro para um objetivo' },
@@ -26,6 +27,7 @@ function Goals() {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [selectedGoal, setSelectedGoal] = useState(null)
   const [depositAmount, setDepositAmount] = useState('')
+  const [sortOrder, setSortOrder] = useState('desc') // 'desc' = maior progresso, 'asc' = menor progresso
 
   const [form, setForm] = useState({
     name: '',
@@ -188,6 +190,20 @@ function Goals() {
         </div>
       </div>
 
+      {/* Contador e Ordenação */}
+      {goals.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
+            {goals.length} meta(s) definida(s)
+          </span>
+          <SortToggle
+            sortOrder={sortOrder}
+            onToggle={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+            label="Progresso"
+          />
+        </div>
+      )}
+
       {/* Lista de Metas */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: colors.textSecondary }}>Carregando...</div>
@@ -204,7 +220,7 @@ function Goals() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
-          {goals.map((goal) => {
+          {[...goals].sort((a, b) => sortOrder === 'desc' ? (b.progress || 0) - (a.progress || 0) : (a.progress || 0) - (b.progress || 0)).map((goal) => {
             const typeConfig = getGoalType(goal.type)
             const Icon = typeConfig.icon
             const progress = goal.progress || 0

@@ -53,60 +53,85 @@ function GlobalSearch({ isOpen, onClose }) {
   const [selectedIndex, setSelectedIndex] = useState(-1)
 
   useEffect(() => {
+    let isMounted = true
+    const abortController = new AbortController()
+
+    const loadSuggestionsInternal = async () => {
+      try {
+        const { data } = await api.get('/search/suggestions', {
+          signal: abortController.signal
+        })
+        if (isMounted) {
+          setSuggestions(data)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Erro ao carregar sugestões:', error)
+        }
+      }
+    }
+
     if (isOpen) {
       inputRef.current?.focus()
-      loadSuggestions()
-      loadRecentSearches()
+      loadSuggestionsInternal()
+      const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]')
+      setRecentSearches(recent)
     } else {
       setQuery('')
       setResults(null)
       setSelectedIndex(-1)
     }
+
+    return () => {
+      isMounted = false
+      abortController.abort()
+    }
   }, [isOpen])
 
   useEffect(() => {
+    let isMounted = true
+    const abortController = new AbortController()
+
+    const performSearchInternal = async () => {
+      setLoading(true)
+      try {
+        const { data } = await api.get(`/search?q=${encodeURIComponent(query)}`, {
+          signal: abortController.signal
+        })
+        if (isMounted) {
+          setResults(data)
+          setSelectedIndex(-1)
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Erro na busca:', error)
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
     const delayDebounceFn = setTimeout(() => {
       if (query.length >= 2) {
-        performSearch()
-      } else {
+        performSearchInternal()
+      } else if (isMounted) {
         setResults(null)
       }
     }, 300)
 
-    return () => clearTimeout(delayDebounceFn)
-  }, [query])
-
-  const loadSuggestions = async () => {
-    try {
-      const { data } = await api.get('/search/suggestions')
-      setSuggestions(data)
-    } catch (error) {
-      console.error('Erro ao carregar sugestões:', error)
+    return () => {
+      isMounted = false
+      abortController.abort()
+      clearTimeout(delayDebounceFn)
     }
-  }
-
-  const loadRecentSearches = () => {
-    const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]')
-    setRecentSearches(recent)
-  }
+  }, [query])
 
   const saveRecentSearch = (searchQuery) => {
     const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]')
     const updated = [searchQuery, ...recent.filter(r => r !== searchQuery)].slice(0, 5)
     localStorage.setItem('recentSearches', JSON.stringify(updated))
-  }
-
-  const performSearch = async () => {
-    setLoading(true)
-    try {
-      const { data } = await api.get(`/search?q=${encodeURIComponent(query)}`)
-      setResults(data)
-      setSelectedIndex(-1)
-    } catch (error) {
-      console.error('Erro na busca:', error)
-    } finally {
-      setLoading(false)
-    }
   }
 
   const handleSelect = (item) => {

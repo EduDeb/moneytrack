@@ -3,7 +3,7 @@ const router = express.Router()
 const Bill = require('../models/Bill')
 const Recurring = require('../models/Recurring')
 const Transaction = require('../models/Transaction')
-const { protect } = require('../middleware/auth')
+const { protect, validateObjectId } = require('../middleware/auth')
 
 // Todas as rotas precisam de autenticação
 router.use(protect)
@@ -16,8 +16,9 @@ router.get('/', async (req, res) => {
 
     const filter = { user: req.user._id }
 
-    const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1
-    const currentYear = year ? parseInt(year) : new Date().getFullYear()
+    // Usar UTC para consistência com datas armazenadas no banco
+    const currentMonth = month ? parseInt(month) : new Date().getUTCMonth() + 1
+    const currentYear = year ? parseInt(year) : new Date().getUTCFullYear()
 
     filter.currentMonth = currentMonth
     filter.currentYear = currentYear
@@ -30,9 +31,9 @@ router.get('/', async (req, res) => {
 
     const bills = await Bill.find(filter).sort({ dueDay: 1 })
 
-    // Buscar recorrências do tipo expense que vencem neste mês
-    const startOfMonth = new Date(currentYear, currentMonth - 1, 1)
-    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+    // Buscar recorrências do tipo expense que vencem neste mês (usar UTC para consistência)
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
 
     const recurrings = await Recurring.find({
       user: req.user._id,
@@ -96,8 +97,9 @@ router.get('/', async (req, res) => {
 router.get('/upcoming', async (req, res) => {
   try {
     const today = new Date()
-    const currentMonth = today.getMonth() + 1
-    const currentYear = today.getFullYear()
+    // Usar UTC para consistência
+    const currentMonth = today.getUTCMonth() + 1
+    const currentYear = today.getUTCFullYear()
 
     const bills = await Bill.find({
       user: req.user._id,
@@ -122,8 +124,10 @@ router.get('/upcoming', async (req, res) => {
 // @desc    Resumo das contas do mês (incluindo recorrências)
 router.get('/summary', async (req, res) => {
   try {
-    const currentMonth = new Date().getMonth() + 1
-    const currentYear = new Date().getFullYear()
+    const { month, year } = req.query
+    // Usar UTC para consistência com datas armazenadas no banco
+    const currentMonth = month ? parseInt(month) : new Date().getUTCMonth() + 1
+    const currentYear = year ? parseInt(year) : new Date().getUTCFullYear()
 
     const bills = await Bill.find({
       user: req.user._id,
@@ -131,9 +135,9 @@ router.get('/summary', async (req, res) => {
       currentYear
     })
 
-    // Buscar recorrências do tipo expense que vencem neste mês
-    const startOfMonth = new Date(currentYear, currentMonth - 1, 1)
-    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+    // Buscar recorrências do tipo expense que vencem neste mês (usar UTC para consistência)
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
 
     const recurrings = await Recurring.find({
       user: req.user._id,
@@ -180,16 +184,28 @@ router.post('/', async (req, res) => {
   try {
     const { name, category, amount, dueDay, isRecurring, notes } = req.body
 
+    // Validações básicas
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Nome é obrigatório' })
+    }
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      return res.status(400).json({ message: 'Valor deve ser um número maior que zero' })
+    }
+    if (!dueDay || isNaN(parseInt(dueDay)) || parseInt(dueDay) < 1 || parseInt(dueDay) > 31) {
+      return res.status(400).json({ message: 'Dia de vencimento deve ser entre 1 e 31' })
+    }
+
+    const now = new Date()
     const bill = await Bill.create({
       user: req.user._id,
-      name,
+      name: name.trim(),
       category,
-      amount,
-      dueDay,
+      amount: parseFloat(amount),
+      dueDay: parseInt(dueDay),
       isRecurring,
       notes,
-      currentMonth: new Date().getMonth() + 1,
-      currentYear: new Date().getFullYear()
+      currentMonth: now.getUTCMonth() + 1,
+      currentYear: now.getUTCFullYear()
     })
 
     res.status(201).json({ bill })
@@ -200,7 +216,7 @@ router.post('/', async (req, res) => {
 
 // @route   PUT /api/bills/:id
 // @desc    Atualizar conta
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateObjectId(), async (req, res) => {
   try {
     const bill = await Bill.findOne({ _id: req.params.id, user: req.user._id })
 
@@ -227,7 +243,7 @@ router.put('/:id', async (req, res) => {
 
 // @route   POST /api/bills/:id/pay
 // @desc    Marcar conta como paga e criar transação (funciona para bills e recorrências)
-router.post('/:id/pay', async (req, res) => {
+router.post('/:id/pay', validateObjectId(), async (req, res) => {
   try {
     const { isFromRecurring } = req.body
 
@@ -337,7 +353,7 @@ router.post('/:id/pay', async (req, res) => {
 
 // @route   POST /api/bills/:id/renew
 // @desc    Renovar conta para o próximo mês (para recorrentes)
-router.post('/:id/renew', async (req, res) => {
+router.post('/:id/renew', validateObjectId(), async (req, res) => {
   try {
     const bill = await Bill.findOne({ _id: req.params.id, user: req.user._id })
 
@@ -372,7 +388,7 @@ router.post('/:id/renew', async (req, res) => {
 
 // @route   DELETE /api/bills/:id
 // @desc    Excluir conta
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateObjectId(), async (req, res) => {
   try {
     const bill = await Bill.findOneAndDelete({ _id: req.params.id, user: req.user._id })
 

@@ -140,7 +140,19 @@ function Bills() {
     e.preventDefault()
     try {
       if (editingBill) {
-        await api.put(`/bills/${editingBill._id}`, form)
+        // Usar endpoint correto baseado na origem do item
+        if (editingBill.isFromRecurring) {
+          // Para recorrências, converter campos para o formato esperado pelo backend
+          const recurringData = {
+            name: form.name,
+            category: form.category,
+            amount: parseFloat(form.amount),
+            dayOfMonth: parseInt(form.dueDay)
+          }
+          await api.put(`/recurring/${editingBill._id}`, recurringData)
+        } else {
+          await api.put(`/bills/${editingBill._id}`, form)
+        }
       } else {
         await api.post('/bills', form)
       }
@@ -167,10 +179,16 @@ function Bills() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta conta?')) return
+  const handleDelete = async (bill) => {
+    const confirmMsg = bill.isFromRecurring
+      ? 'Tem certeza que deseja excluir esta conta recorrente? Ela será removida de todos os meses.'
+      : 'Tem certeza que deseja excluir esta conta?'
+
+    if (!confirm(confirmMsg)) return
     try {
-      await api.delete(`/bills/${id}`)
+      // Usar endpoint correto baseado na origem do item
+      const endpoint = bill.isFromRecurring ? `/recurring/${bill._id}` : `/bills/${bill._id}`
+      await api.delete(endpoint)
       fetchBills()
       fetchSummary()
     } catch (error) {
@@ -601,7 +619,7 @@ function Bills() {
                     <Edit2 size={16} color={colors.textSecondary} />
                   </button>
                   <button
-                    onClick={() => handleDelete(bill._id)}
+                    onClick={() => handleDelete(bill)}
                     style={{
                       padding: '8px',
                       borderRadius: '8px',

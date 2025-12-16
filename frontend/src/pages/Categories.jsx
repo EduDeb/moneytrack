@@ -26,6 +26,7 @@ import {
   Palette
 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
+import { useCategories } from '../contexts/CategoriesContext'
 
 // Mapeamento de ícones disponíveis
 const ICONS = {
@@ -44,6 +45,7 @@ const COLORS = [
 
 function Categories() {
   const { colors, isDark } = useContext(ThemeContext)
+  const { refreshCategories: refreshGlobalCategories } = useCategories()
   const [categories, setCategories] = useState({ income: [], expense: [] })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('expense')
@@ -104,6 +106,8 @@ function Categories() {
       }
       setModalOpen(false)
       fetchCategories()
+      // Atualizar contexto global para que outras páginas vejam as mudanças
+      refreshGlobalCategories()
     } catch (error) {
       alert(error.response?.data?.message || 'Erro ao salvar categoria')
     }
@@ -115,6 +119,7 @@ function Categories() {
     try {
       await api.delete(`/categories/${category._id}`)
       fetchCategories()
+      refreshGlobalCategories()
     } catch (error) {
       alert('Erro ao remover categoria')
     }
@@ -126,6 +131,7 @@ function Categories() {
     try {
       await api.post('/categories/reset')
       fetchCategories()
+      refreshGlobalCategories()
     } catch (error) {
       alert('Erro ao resetar categorias')
     }

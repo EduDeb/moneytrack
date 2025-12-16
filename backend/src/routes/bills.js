@@ -31,50 +31,118 @@ router.get('/', async (req, res) => {
 
     const bills = await Bill.find(filter).sort({ dueDay: 1 })
 
-    // Buscar recorrências do tipo expense que vencem neste mês (usar UTC para consistência)
+    // Buscar recorrências do tipo expense que se aplicam ao mês selecionado
+    // A lógica deve considerar: startDate <= mês selecionado E (endDate >= mês selecionado OU não tem endDate)
     const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
     const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
 
+    // Buscar todas as recorrências ativas que começaram antes ou durante o mês selecionado
     const recurrings = await Recurring.find({
       user: req.user._id,
       type: 'expense',
       isActive: true,
-      nextDueDate: { $gte: startOfMonth, $lte: endOfMonth }
+      startDate: { $lte: endOfMonth }, // Começou antes ou durante o mês
+      $or: [
+        { endDate: { $exists: false } }, // Sem data de término
+        { endDate: null }, // Sem data de término
+        { endDate: { $gte: startOfMonth } } // Data de término é depois do início do mês
+      ]
     }).populate('account', 'name color')
 
-    // Converter recorrências para formato de bill
+    // Converter recorrências para formato de bill, calculando a data correta para o mês selecionado
     const recurringBills = recurrings.map(r => {
-      const dueDate = new Date(r.nextDueDate)
+      // Calcular a data de vencimento para o mês selecionado
+      let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
+
+      // Ajustar para o último dia do mês se necessário (ex: dia 31 em fevereiro)
+      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
+      if (dueDay > lastDayOfMonth) {
+        dueDay = lastDayOfMonth
+      }
+
+      // Criar a data de vencimento para este mês específico
+      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
+
       const today = new Date()
       const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
 
+      // Para parcelamentos, calcular qual parcela corresponde ao mês selecionado
+      let installmentForThisMonth = r.currentInstallment
+      let isPaidThisMonth = false
+
+      if (r.isInstallment) {
+        // Calcular quantos meses se passaram desde o início do parcelamento
+        const startDate = new Date(r.startDate)
+        const startMonth = startDate.getUTCMonth() + 1
+        const startYear = startDate.getUTCFullYear()
+
+        // Meses desde o início (0 = primeiro mês)
+        const monthsDiff = (currentYear - startYear) * 12 + (currentMonth - startMonth)
+
+        // A parcela para este mês (1-indexed)
+        installmentForThisMonth = monthsDiff + 1
+
+        // Se a parcela calculada é maior que o total, não mostrar
+        if (installmentForThisMonth > r.totalInstallments) {
+          return null // Será filtrado depois
+        }
+
+        // Se a parcela calculada é menor que 1, não mostrar (mês anterior ao início)
+        if (installmentForThisMonth < 1) {
+          return null
+        }
+
+        // Verificar se esta parcela específica já foi paga
+        // Uma parcela está paga se currentInstallment > installmentForThisMonth
+        isPaidThisMonth = r.currentInstallment > installmentForThisMonth
+      } else {
+        // Para recorrências normais, verificar pelo lastGeneratedDate
+        if (r.lastGeneratedDate) {
+          const lastGenDate = new Date(r.lastGeneratedDate)
+          isPaidThisMonth = lastGenDate.getUTCMonth() + 1 === currentMonth &&
+                            lastGenDate.getUTCFullYear() === currentYear
+        }
+      }
+
       let urgency = 'normal'
-      if (daysUntilDue < 0) urgency = 'overdue'
-      else if (daysUntilDue === 0) urgency = 'today'
-      else if (daysUntilDue <= 3) urgency = 'soon'
-      else if (daysUntilDue <= 7) urgency = 'upcoming'
+      if (isPaidThisMonth) {
+        urgency = 'paid'
+      } else if (daysUntilDue < 0) {
+        urgency = 'overdue'
+      } else if (daysUntilDue === 0) {
+        urgency = 'today'
+      } else if (daysUntilDue <= 3) {
+        urgency = 'soon'
+      } else if (daysUntilDue <= 7) {
+        urgency = 'upcoming'
+      }
 
       return {
         _id: r._id,
-        name: r.name,
+        name: r.isInstallment ? `${r.name} (${installmentForThisMonth}/${r.totalInstallments})` : r.name,
         category: r.category,
         amount: r.amount,
-        dueDay: dueDate.getDate(),
+        dueDay: dueDay,
         isRecurring: true,
-        isPaid: false,
+        isPaid: isPaidThisMonth,
         isFromRecurring: true, // Flag para identificar que veio de recorrência
         recurringId: r._id,
         account: r.account,
         urgency,
         daysUntilDue,
-        nextDueDate: r.nextDueDate
+        nextDueDate: dueDate,
+        isInstallment: r.isInstallment,
+        currentInstallment: installmentForThisMonth, // Parcela correspondente a este mês
+        totalInstallments: r.totalInstallments
       }
-    })
+    }).filter(r => r !== null) // Remover parcelas fora do período
 
     // Filtrar por status se necessário
     let filteredRecurringBills = recurringBills
     if (status === 'paid') {
-      filteredRecurringBills = [] // Recorrências ainda não pagas não aparecem no filtro "pagas"
+      filteredRecurringBills = recurringBills.filter(b => b.isPaid) // Apenas recorrências pagas neste mês
+    } else if (status === 'pending') {
+      filteredRecurringBills = recurringBills.filter(b => !b.isPaid) // Apenas recorrências pendentes
     }
 
     // Combinar bills e recorrências
@@ -93,14 +161,14 @@ router.get('/', async (req, res) => {
 })
 
 // @route   GET /api/bills/upcoming
-// @desc    Listar contas dos próximos 7 dias
+// @desc    Listar contas dos próximos 7 dias (incluindo recorrências)
 router.get('/upcoming', async (req, res) => {
   try {
     const today = new Date()
-    // Usar UTC para consistência
     const currentMonth = today.getUTCMonth() + 1
     const currentYear = today.getUTCFullYear()
 
+    // Buscar bills pendentes do mês atual
     const bills = await Bill.find({
       user: req.user._id,
       isPaid: false,
@@ -112,9 +180,71 @@ router.get('/upcoming', async (req, res) => {
     const upcomingBills = bills.filter(bill => {
       const daysUntil = bill.daysUntilDue
       return daysUntil <= 7
-    })
+    }).map(b => ({
+      ...b.toObject(),
+      isFromRecurring: false
+    }))
 
-    res.json({ bills: upcomingBills })
+    // Buscar recorrências ativas que vencem nos próximos 7 dias
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
+
+    const recurrings = await Recurring.find({
+      user: req.user._id,
+      type: 'expense',
+      isActive: true,
+      startDate: { $lte: endOfMonth },
+      $or: [
+        { endDate: { $exists: false } },
+        { endDate: null },
+        { endDate: { $gte: startOfMonth } }
+      ]
+    }).populate('account', 'name color')
+
+    // Converter recorrências para formato de bill e filtrar as dos próximos 7 dias
+    const upcomingRecurrings = recurrings.map(r => {
+      let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
+      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
+      if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
+
+      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
+      const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+
+      // Verificar se já foi paga neste mês
+      let isPaidThisMonth = false
+      if (r.lastGeneratedDate) {
+        const lastGenDate = new Date(r.lastGeneratedDate)
+        isPaidThisMonth = lastGenDate.getUTCMonth() + 1 === currentMonth &&
+                          lastGenDate.getUTCFullYear() === currentYear
+      }
+
+      let urgency = 'normal'
+      if (daysUntilDue < 0) urgency = 'overdue'
+      else if (daysUntilDue === 0) urgency = 'today'
+      else if (daysUntilDue <= 3) urgency = 'soon'
+      else if (daysUntilDue <= 7) urgency = 'upcoming'
+
+      return {
+        _id: r._id,
+        name: r.isInstallment ? `${r.name} (${r.currentInstallment}/${r.totalInstallments})` : r.name,
+        category: r.category,
+        amount: r.amount,
+        dueDay,
+        isRecurring: true,
+        isPaid: isPaidThisMonth,
+        isFromRecurring: true,
+        recurringId: r._id,
+        account: r.account,
+        urgency,
+        daysUntilDue
+      }
+    }).filter(r => !r.isPaid && r.daysUntilDue <= 7) // Apenas pendentes dos próximos 7 dias
+
+    // Combinar e ordenar
+    const allUpcoming = [...upcomingBills, ...upcomingRecurrings]
+    allUpcoming.sort((a, b) => a.dueDay - b.dueDay)
+
+    res.json({ bills: allUpcoming })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar contas', error: error.message })
   }
@@ -135,7 +265,7 @@ router.get('/summary', async (req, res) => {
       currentYear
     })
 
-    // Buscar recorrências do tipo expense que vencem neste mês (usar UTC para consistência)
+    // Buscar recorrências do tipo expense que se aplicam ao mês selecionado
     const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
     const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
 
@@ -143,25 +273,70 @@ router.get('/summary', async (req, res) => {
       user: req.user._id,
       type: 'expense',
       isActive: true,
-      nextDueDate: { $gte: startOfMonth, $lte: endOfMonth }
+      startDate: { $lte: endOfMonth },
+      $or: [
+        { endDate: { $exists: false } },
+        { endDate: null },
+        { endDate: { $gte: startOfMonth } }
+      ]
     })
 
     const today = new Date()
+
+    // Processar recorrências para verificar se já foram pagas neste mês
+    const processedRecurrings = recurrings.map(r => {
+      let isPaidThisMonth = false
+
+      // Para parcelamentos, verificar se a parcela deste mês já foi paga
+      if (r.isInstallment) {
+        const startDate = new Date(r.startDate)
+        const startMonth = startDate.getUTCMonth() + 1
+        const startYear = startDate.getUTCFullYear()
+        const monthsDiff = (currentYear - startYear) * 12 + (currentMonth - startMonth)
+        const installmentForThisMonth = monthsDiff + 1
+
+        // Se parcela fora do período, não incluir
+        if (installmentForThisMonth < 1 || installmentForThisMonth > r.totalInstallments) {
+          return null
+        }
+
+        // Parcela está paga se currentInstallment > installmentForThisMonth
+        isPaidThisMonth = r.currentInstallment > installmentForThisMonth
+      } else {
+        // Para recorrências normais
+        if (r.lastGeneratedDate) {
+          const lastGenDate = new Date(r.lastGeneratedDate)
+          isPaidThisMonth = lastGenDate.getUTCMonth() + 1 === currentMonth &&
+                            lastGenDate.getUTCFullYear() === currentYear
+        }
+      }
+
+      // Calcular dia de vencimento para este mês
+      let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
+      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
+      if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
+
+      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
+      const isOverdue = !isPaidThisMonth && dueDate < today
+
+      return { ...r.toObject(), isPaidThisMonth, isOverdue }
+    }).filter(r => r !== null)
 
     // Calcular totais das bills
     const billsTotal = bills.reduce((sum, b) => sum + b.amount, 0)
     const billsPaid = bills.filter(b => b.isPaid).reduce((sum, b) => sum + b.amount, 0)
 
-    // Calcular totais das recorrências (todas pendentes)
-    const recurringTotal = recurrings.reduce((sum, r) => sum + r.amount, 0)
-    const recurringOverdue = recurrings.filter(r => new Date(r.nextDueDate) < today).length
+    // Calcular totais das recorrências
+    const recurringTotal = processedRecurrings.reduce((sum, r) => sum + r.amount, 0)
+    const recurringPaid = processedRecurrings.filter(r => r.isPaidThisMonth).reduce((sum, r) => sum + r.amount, 0)
+    const recurringOverdue = processedRecurrings.filter(r => r.isOverdue).length
 
     // Totais combinados
     const total = billsTotal + recurringTotal
-    const paid = billsPaid
+    const paid = billsPaid + recurringPaid
     const pending = total - paid
-    const paidCount = bills.filter(b => b.isPaid).length
-    const pendingCount = bills.filter(b => !b.isPaid).length + recurrings.length
+    const paidCount = bills.filter(b => b.isPaid).length + processedRecurrings.filter(r => r.isPaidThisMonth).length
+    const pendingCount = bills.filter(b => !b.isPaid).length + processedRecurrings.filter(r => !r.isPaidThisMonth).length
     const overdueCount = bills.filter(b => !b.isPaid && b.daysUntilDue < 0).length + recurringOverdue
 
     res.json({

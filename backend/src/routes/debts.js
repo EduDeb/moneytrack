@@ -109,7 +109,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // @route   POST /api/debts/:id/payment
-// @desc    Registrar pagamento de parcela
+// @desc    Registrar pagamento de parcela (cria transação automaticamente)
 router.post('/:id/payment', [
   body('amount').isFloat({ min: 0.01 }).withMessage('Valor do pagamento é obrigatório')
 ], async (req, res) => {
@@ -118,6 +118,8 @@ router.post('/:id/payment', [
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
+
+    const { amount, account, date, notes } = req.body;
 
     const debt = await Debt.findOne({
       _id: req.params.id,
@@ -128,7 +130,8 @@ router.post('/:id/payment', [
       return res.status(404).json({ message: 'Dívida não encontrada' });
     }
 
-    debt.remainingAmount = Math.max(0, debt.remainingAmount - req.body.amount);
+    // Atualizar dívida
+    debt.remainingAmount = Math.max(0, debt.remainingAmount - amount);
     debt.paidInstallments += 1;
 
     if (debt.remainingAmount === 0) {
@@ -136,7 +139,28 @@ router.post('/:id/payment', [
     }
 
     await debt.save();
-    res.json(debt);
+
+    // CRIAR TRANSAÇÃO DE DESPESA AUTOMATICAMENTE
+    const Transaction = require('../models/Transaction');
+
+    const transaction = await Transaction.create({
+      user: req.user._id,
+      type: 'expense',
+      category: 'dividas', // Categoria específica para dívidas
+      description: `Pagamento: ${debt.name} (${debt.paidInstallments}/${debt.installments})`,
+      amount: amount,
+      account: account || null, // Conta bancária opcional
+      date: date ? new Date(date) : new Date(),
+      notes: notes || `Pagamento de dívida: ${debt.creditor || debt.name}`,
+      // Vincular à dívida para rastreamento
+      tags: ['divida', debt.type]
+    });
+
+    res.json({
+      debt,
+      transaction,
+      message: 'Pagamento registrado e transação criada!'
+    });
   } catch (error) {
     res.status(500).json({ message: 'Erro no servidor', error: error.message });
   }

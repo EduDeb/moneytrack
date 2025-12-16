@@ -9,7 +9,7 @@ const budgetSchema = new mongoose.Schema({
   category: {
     type: String,
     required: [true, 'Categoria é obrigatória'],
-    enum: ['alimentacao', 'transporte', 'moradia', 'saude', 'educacao', 'lazer', 'compras', 'contas', 'outros_despesa']
+    trim: true
   },
   limit: {
     type: Number,

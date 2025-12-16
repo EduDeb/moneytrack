@@ -189,4 +189,134 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
+// @route   POST /api/budget/copy
+// @desc    Copiar orçamentos de um mês para outro
+router.post('/copy', async (req, res) => {
+  try {
+    const { fromMonth, fromYear, toMonth, toYear } = req.body
+
+    // Validações
+    if (!fromMonth || !fromYear || !toMonth || !toYear) {
+      return res.status(400).json({ message: 'Mês e ano de origem e destino são obrigatórios' })
+    }
+
+    // Buscar orçamentos do mês de origem
+    const sourceBudgets = await Budget.find({
+      user: req.user._id,
+      month: parseInt(fromMonth),
+      year: parseInt(fromYear)
+    })
+
+    if (sourceBudgets.length === 0) {
+      return res.status(404).json({ message: 'Nenhum orçamento encontrado no mês de origem' })
+    }
+
+    // Criar orçamentos no mês de destino
+    const createdBudgets = []
+    const skippedBudgets = []
+
+    for (const budget of sourceBudgets) {
+      try {
+        const newBudget = await Budget.findOneAndUpdate(
+          {
+            user: req.user._id,
+            category: budget.category,
+            month: parseInt(toMonth),
+            year: parseInt(toYear)
+          },
+          { limit: budget.limit },
+          { new: true, upsert: true }
+        )
+        createdBudgets.push(newBudget)
+      } catch (err) {
+        skippedBudgets.push({ category: budget.category, error: err.message })
+      }
+    }
+
+    res.json({
+      message: `${createdBudgets.length} orçamento(s) copiado(s)`,
+      created: createdBudgets.length,
+      skipped: skippedBudgets.length,
+      budgets: createdBudgets
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao copiar orçamentos', error: error.message })
+  }
+})
+
+// @route   POST /api/budget/auto-create
+// @desc    Criar orçamentos automaticamente baseado no último mês com orçamentos
+router.post('/auto-create', async (req, res) => {
+  try {
+    const { month, year } = req.body
+    const targetMonth = month ? parseInt(month) : new Date().getUTCMonth() + 1
+    const targetYear = year ? parseInt(year) : new Date().getUTCFullYear()
+
+    // Verificar se já existem orçamentos no mês de destino
+    const existingBudgets = await Budget.find({
+      user: req.user._id,
+      month: targetMonth,
+      year: targetYear
+    })
+
+    if (existingBudgets.length > 0) {
+      return res.json({
+        message: 'Orçamentos já existem para este mês',
+        budgets: existingBudgets
+      })
+    }
+
+    // Buscar o mês anterior com orçamentos
+    let searchMonth = targetMonth - 1
+    let searchYear = targetYear
+    if (searchMonth < 1) {
+      searchMonth = 12
+      searchYear--
+    }
+
+    // Tentar encontrar orçamentos nos últimos 3 meses
+    let sourceBudgets = null
+    for (let i = 0; i < 3; i++) {
+      sourceBudgets = await Budget.find({
+        user: req.user._id,
+        month: searchMonth,
+        year: searchYear
+      })
+
+      if (sourceBudgets.length > 0) break
+
+      searchMonth--
+      if (searchMonth < 1) {
+        searchMonth = 12
+        searchYear--
+      }
+    }
+
+    if (!sourceBudgets || sourceBudgets.length === 0) {
+      return res.status(404).json({ message: 'Nenhum orçamento encontrado nos últimos 3 meses para copiar' })
+    }
+
+    // Criar orçamentos
+    const createdBudgets = await Promise.all(
+      sourceBudgets.map(budget =>
+        Budget.create({
+          user: req.user._id,
+          category: budget.category,
+          limit: budget.limit,
+          month: targetMonth,
+          year: targetYear
+        })
+      )
+    )
+
+    res.status(201).json({
+      message: `${createdBudgets.length} orçamento(s) criado(s) automaticamente`,
+      budgets: createdBudgets,
+      copiedFrom: { month: searchMonth, year: searchYear }
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao criar orçamentos', error: error.message })
+  }
+})
+
 module.exports = router

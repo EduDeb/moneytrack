@@ -98,10 +98,15 @@ router.put('/:id', async (req, res) => {
 })
 
 // @route   POST /api/goals/:id/deposit
-// @desc    Adicionar valor à meta
+// @desc    Adicionar valor à meta (cria transação automaticamente)
 router.post('/:id/deposit', async (req, res) => {
   try {
-    const { amount } = req.body
+    const { amount, account, date, createTransaction = true } = req.body
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Valor deve ser maior que zero' })
+    }
+
     const goal = await Goal.findOne({ _id: req.params.id, user: req.user._id })
 
     if (!goal) {
@@ -110,14 +115,94 @@ router.post('/:id/deposit', async (req, res) => {
 
     goal.currentAmount += amount
 
-    if (goal.currentAmount >= goal.targetAmount) {
+    if (goal.currentAmount >= goal.targetAmount && goal.status === 'active') {
       goal.status = 'completed'
     }
 
     await goal.save()
-    res.json({ goal, message: 'Depósito realizado!' })
+
+    // CRIAR TRANSAÇÃO AUTOMATICAMENTE (se solicitado)
+    let transaction = null
+    if (createTransaction) {
+      const Transaction = require('../models/Transaction')
+
+      transaction = await Transaction.create({
+        user: req.user._id,
+        type: 'expense', // É uma "saída" do dinheiro disponível para a meta
+        category: 'metas',
+        description: `Depósito na meta: ${goal.name}`,
+        amount: amount,
+        account: account || null,
+        date: date ? new Date(date) : new Date(),
+        tags: ['meta', goal.type]
+      })
+    }
+
+    const response = {
+      goal,
+      message: goal.status === 'completed' ? 'Meta atingida! Parabéns!' : 'Depósito realizado!'
+    }
+
+    if (transaction) {
+      response.transaction = transaction
+    }
+
+    res.json(response)
   } catch (error) {
     res.status(400).json({ message: 'Erro ao depositar', error: error.message })
+  }
+})
+
+// @route   POST /api/goals/:id/withdraw
+// @desc    Retirar valor da meta (ex: usar o dinheiro economizado)
+router.post('/:id/withdraw', async (req, res) => {
+  try {
+    const { amount, account, date, description } = req.body
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Valor deve ser maior que zero' })
+    }
+
+    const goal = await Goal.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' })
+    }
+
+    if (amount > goal.currentAmount) {
+      return res.status(400).json({ message: 'Valor de retirada maior que o saldo disponível na meta' })
+    }
+
+    goal.currentAmount -= amount
+
+    // Se tinha completado mas retirou, voltar para ativo
+    if (goal.status === 'completed' && goal.currentAmount < goal.targetAmount) {
+      goal.status = 'active'
+    }
+
+    await goal.save()
+
+    // Criar transação de receita (dinheiro "volta" para disponível)
+    const Transaction = require('../models/Transaction')
+
+    const transaction = await Transaction.create({
+      user: req.user._id,
+      type: 'income',
+      category: 'metas',
+      description: description || `Retirada da meta: ${goal.name}`,
+      amount: amount,
+      account: account || null,
+      date: date ? new Date(date) : new Date(),
+      tags: ['meta', 'retirada']
+    })
+
+    res.json({
+      goal,
+      transaction,
+      message: 'Retirada realizada!'
+    })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao retirar', error: error.message })
   }
 })
 

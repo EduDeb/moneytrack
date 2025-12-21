@@ -1,0 +1,24 @@
+[
+  {
+    "_id": "693d6754ab9f9d3a5b45ff1d",
+    "category": "alimentacao",
+    "month": 1,
+    "year": 2025,
+    "user": "693d387c8d751d0e5e66bd4c",
+    "__v": 0,
+    "createdAt": "2025-12-13T13:17:07.985Z",
+    "limit": 1500,
+    "updatedAt": "2025-12-13T13:17:07.985Z"
+  },
+  {
+    "_id": "693f18e2ab9f9d3a5b497891",
+    "category": "Alimentação",
+    "year": 2025,
+    "user": "693f18a93375b74a0e5c562f",
+    "month": 12,
+    "__v": 0,
+    "createdAt": "2025-12-14T20:06:58.257Z",
+    "limit": 1000,
+    "updatedAt": "2025-12-14T20:06:58.257Z"
+  }
+]

@@ -1,0 +1,48 @@
+[
+  {
+    "_id": "693d67538d751d0e5e66bdaa",
+    "user": "693d387c8d751d0e5e66bd4c",
+    "name": "Fundo de Emergência",
+    "type": "savings",
+    "targetAmount": 30000,
+    "currentAmount": 5000,
+    "deadline": "2025-12-31T00:00:00.000Z",
+    "color": "#3b82f6",
+    "icon": "target",
+    "status": "active",
+    "createdAt": "2025-12-13T13:17:07.858Z",
+    "updatedAt": "2025-12-13T13:17:07.858Z",
+    "__v": 0
+  },
+  {
+    "_id": "693f18e23375b74a0e5c5647",
+    "user": "693f18a93375b74a0e5c562f",
+    "name": "Reserva de Emergência",
+    "type": "savings",
+    "targetAmount": 10000,
+    "currentAmount": 2000,
+    "deadline": "2026-12-31T00:00:00.000Z",
+    "color": "#3b82f6",
+    "icon": "target",
+    "status": "active",
+    "createdAt": "2025-12-14T20:06:58.126Z",
+    "updatedAt": "2025-12-14T20:06:58.126Z",
+    "__v": 0
+  },
+  {
+    "_id": "69431f60d20baa2bccd61170",
+    "user": "693d290f2a47ef4d544f1616",
+    "name": "Reduzir custos",
+    "type": "expense_limit",
+    "targetAmount": 35000,
+    "currentAmount": 45000,
+    "deadline": "2026-06-30T00:00:00.000Z",
+    "color": "#8b5cf6",
+    "icon": "target",
+    "status": "active",
+    "notes": "",
+    "createdAt": "2025-12-17T21:23:44.348Z",
+    "updatedAt": "2025-12-17T21:23:44.348Z",
+    "__v": 0
+  }
+]

@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const Transaction = require('../models/Transaction');
 const { protect, validateObjectId } = require('../middleware/auth');
+const { normalizeToUTC } = require('../utils/dateHelper');
 
 // Todas as rotas requerem autenticação
 router.use(protect);
@@ -244,6 +245,152 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
+// @route   GET /api/transactions/suggest-category
+// @desc    Sugerir categoria baseada no histórico de descrições
+router.get('/suggest-category', async (req, res) => {
+  try {
+    const { description } = req.query;
+
+    if (!description || description.trim().length < 2) {
+      return res.json({ category: null, confidence: 0, suggestions: [] });
+    }
+
+    const searchTerm = description.trim().toLowerCase();
+
+    // 1. Buscar correspondência EXATA primeiro (case insensitive)
+    const exactMatch = await Transaction.findOne({
+      user: req.user._id,
+      description: { $regex: new RegExp(`^${searchTerm}$`, 'i') }
+    }).sort({ date: -1 });
+
+    if (exactMatch) {
+      return res.json({
+        category: exactMatch.category,
+        type: exactMatch.type,
+        confidence: 100,
+        matchType: 'exact',
+        suggestions: [{
+          description: exactMatch.description,
+          category: exactMatch.category,
+          type: exactMatch.type,
+          count: 1
+        }]
+      });
+    }
+
+    // 2. Buscar correspondência PARCIAL (começa com ou contém)
+    const partialMatches = await Transaction.aggregate([
+      {
+        $match: {
+          user: req.user._id,
+          description: { $regex: new RegExp(searchTerm, 'i') }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            descriptionLower: { $toLower: '$description' },
+            category: '$category',
+            type: '$type'
+          },
+          count: { $sum: 1 },
+          lastUsed: { $max: '$date' },
+          originalDescription: { $first: '$description' }
+        }
+      },
+      {
+        $sort: { count: -1, lastUsed: -1 }
+      },
+      {
+        $limit: 5
+      }
+    ]);
+
+    if (partialMatches.length > 0) {
+      // Retorna a categoria mais usada
+      const bestMatch = partialMatches[0];
+      return res.json({
+        category: bestMatch._id.category,
+        type: bestMatch._id.type,
+        confidence: partialMatches.length === 1 ? 90 : 70,
+        matchType: 'partial',
+        suggestions: partialMatches.map(m => ({
+          description: m.originalDescription,
+          category: m._id.category,
+          type: m._id.type,
+          count: m.count
+        }))
+      });
+    }
+
+    // 3. Nenhuma correspondência encontrada
+    return res.json({
+      category: null,
+      type: null,
+      confidence: 0,
+      matchType: 'none',
+      suggestions: []
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao sugerir categoria', error: error.message });
+  }
+});
+
+// @route   GET /api/transactions/autocomplete
+// @desc    Autocomplete de descrições baseado no histórico
+router.get('/autocomplete', async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.json({ suggestions: [] });
+    }
+
+    const searchTerm = q.trim();
+
+    // Buscar descrições únicas que correspondem
+    const suggestions = await Transaction.aggregate([
+      {
+        $match: {
+          user: req.user._id,
+          description: { $regex: new RegExp(searchTerm, 'i') }
+        }
+      },
+      {
+        $group: {
+          _id: { $toLower: '$description' },
+          description: { $first: '$description' },
+          category: { $first: '$category' },
+          type: { $first: '$type' },
+          count: { $sum: 1 },
+          lastUsed: { $max: '$date' }
+        }
+      },
+      {
+        $sort: { count: -1, lastUsed: -1 }
+      },
+      {
+        $limit: 10
+      },
+      {
+        $project: {
+          _id: 0,
+          description: 1,
+          category: 1,
+          type: 1,
+          count: 1
+        }
+      }
+    ]);
+
+    return res.json({ suggestions });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erro no autocomplete', error: error.message });
+  }
+});
+
 // @route   POST /api/transactions
 // @desc    Criar nova transação
 router.post('/', [
@@ -258,10 +405,17 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const transaction = await Transaction.create({
+    // Normalizar a data para UTC, preservando o dia informado pelo usuário
+    const transactionData = {
       ...req.body,
       user: req.user._id
-    });
+    };
+
+    if (req.body.date) {
+      transactionData.date = normalizeToUTC(req.body.date);
+    }
+
+    const transaction = await Transaction.create(transactionData);
 
     res.status(201).json(transaction);
   } catch (error) {
@@ -282,9 +436,15 @@ router.put('/:id', validateObjectId(), async (req, res) => {
       return res.status(404).json({ message: 'Transação não encontrada' });
     }
 
+    // Normalizar a data se estiver sendo atualizada
+    const updateData = { ...req.body };
+    if (req.body.date) {
+      updateData.date = normalizeToUTC(req.body.date);
+    }
+
     const updatedTransaction = await Transaction.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 

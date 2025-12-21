@@ -81,7 +81,7 @@ export default defineConfig({
             name: 'Dashboard',
             short_name: 'Dashboard',
             description: 'Ver dashboard',
-            url: '/dashboard',
+            url: '/',
             icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
           }
         ]

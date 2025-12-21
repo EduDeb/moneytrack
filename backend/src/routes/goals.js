@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const Goal = require('../models/Goal')
-const { protect } = require('../middleware/auth')
+const { protect, validateObjectId } = require('../middleware/auth')
 
 router.use(protect)
 
@@ -99,7 +99,7 @@ router.put('/:id', async (req, res) => {
 
 // @route   POST /api/goals/:id/deposit
 // @desc    Adicionar valor à meta (cria transação automaticamente)
-router.post('/:id/deposit', async (req, res) => {
+router.post('/:id/deposit', validateObjectId(), async (req, res) => {
   try {
     const { amount, account, date, createTransaction = true } = req.body
 
@@ -155,7 +155,7 @@ router.post('/:id/deposit', async (req, res) => {
 
 // @route   POST /api/goals/:id/withdraw
 // @desc    Retirar valor da meta (ex: usar o dinheiro economizado)
-router.post('/:id/withdraw', async (req, res) => {
+router.post('/:id/withdraw', validateObjectId(), async (req, res) => {
   try {
     const { amount, account, date, description } = req.body
 

@@ -1,0 +1,849 @@
+{
+  "referenceMonth": "2025-12",
+  "categoryMap": {
+    "energia dezembro 2025": {
+      "category": "energia",
+      "type": "expense",
+      "originalDescription": "Energia Dezembro 2025"
+    },
+    "teste pagamento": {
+      "category": "outros",
+      "type": "expense",
+      "originalDescription": "Teste Pagamento"
+    },
+    "salario": {
+      "category": "salario",
+      "type": "income",
+      "originalDescription": "Salario"
+    },
+    "condominio gas": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "condominio gas"
+    },
+    "anuidade certificado de tiro": {
+      "category": "outros",
+      "type": "expense",
+      "originalDescription": "anuidade certificado de tiro"
+    },
+    "manutenção lago": {
+      "category": "manutencao",
+      "type": "expense",
+      "originalDescription": "manutenção lago"
+    },
+    "vivo móvel": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "vivo móvel"
+    },
+    "escola bernardo": {
+      "category": "bernardo",
+      "type": "expense",
+      "originalDescription": "Escola Bernardo"
+    },
+    "futebol bernardo": {
+      "category": "bernardo",
+      "type": "expense",
+      "originalDescription": "Futebol Bernardo"
+    },
+    "ajuda mae": {
+      "category": "outros",
+      "type": "expense",
+      "originalDescription": "Ajuda Mae"
+    },
+    "5 aguas": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "5 aguas"
+    },
+    "manutenção elevador": {
+      "category": "manutencao",
+      "type": "expense",
+      "originalDescription": "manutenção elevador"
+    },
+    "produtos manutenção lago": {
+      "category": "manutencao",
+      "type": "expense",
+      "originalDescription": "produtos manutenção lago"
+    },
+    "supermercado": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "supermercado"
+    },
+    "uber beth e gil": {
+      "category": "colaboradores",
+      "type": "expense",
+      "originalDescription": "Uber Beth e gil"
+    },
+    "camed": {
+      "category": "saude",
+      "type": "expense",
+      "originalDescription": "camed"
+    },
+    "salario beth": {
+      "category": "colaboradores",
+      "type": "expense",
+      "originalDescription": "Salario Beth"
+    },
+    "mercado": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Mercado"
+    },
+    "salário": {
+      "category": "Salário",
+      "type": "income",
+      "originalDescription": "Salário"
+    },
+    "cota extra condominium": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Cota extra condominium"
+    },
+    "pagamento: parcela  carro eduardo - volvo": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Pagamento: Parcela  carro Eduardo - Volvo"
+    },
+    "pagamento: energia": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Pagamento: Energia"
+    },
+    "pagamento: cartao eduardo": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Pagamento: Cartao Eduardo"
+    },
+    "saldo remanecente": {
+      "category": "investimentos",
+      "type": "income",
+      "originalDescription": "Saldo remanecente"
+    },
+    "enel - energia": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Enel - energia"
+    },
+    "colegio bernardo": {
+      "category": "educacao",
+      "type": "expense",
+      "originalDescription": "Colegio Bernardo"
+    },
+    "mercadao": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Mercadao"
+    },
+    "servico eletrica": {
+      "category": "outros_despesa",
+      "type": "expense",
+      "originalDescription": "Servico eletrica"
+    },
+    "manutencao elevador": {
+      "category": "outros_despesa",
+      "type": "expense",
+      "originalDescription": "Manutencao elevador"
+    },
+    "parcela carro eduardo": {
+      "category": "outros_despesa",
+      "type": "expense",
+      "originalDescription": "Parcela carro eduardo"
+    },
+    "parcela carro debora": {
+      "category": "outros_despesa",
+      "type": "expense",
+      "originalDescription": "Parcela carro debora"
+    },
+    "quinzena beth": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Quinzena Beth"
+    },
+    "quinzena ju": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Quinzena Ju"
+    },
+    "quinzena vitor": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Quinzena vitor"
+    },
+    "teste de persistencia": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Teste de persistencia"
+    },
+    "mensalidade anual clube de tiro": {
+      "category": "lazer",
+      "type": "expense",
+      "originalDescription": "Mensalidade anual clube de tiro"
+    },
+    "cliube de tiro": {
+      "category": "lazer",
+      "type": "expense",
+      "originalDescription": "Cliube de tiro"
+    },
+    "imposto colaboradores": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Imposto colaboradores"
+    },
+    "cartão eduardo itau": {
+      "category": "contas",
+      "type": "expense",
+      "originalDescription": "Cartão Eduardo Itau"
+    },
+    "servico blindagem anual carro eduardo": {
+      "category": "outros_despesa",
+      "type": "expense",
+      "originalDescription": "Servico Blindagem anual carro eduardo"
+    },
+    "acougue": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Acougue"
+    },
+    "internet": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Internet"
+    },
+    "vivo celular": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Vivo celular"
+    },
+    "gasolina eduardo": {
+      "category": "transporte",
+      "type": "expense",
+      "originalDescription": "Gasolina eduardo"
+    },
+    "salário mensal": {
+      "category": "salario",
+      "type": "income",
+      "originalDescription": "Salário mensal"
+    },
+    "almoço teste": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Almoço teste"
+    },
+    "condominio": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Condominio"
+    },
+    "plano de saude": {
+      "category": "saude",
+      "type": "expense",
+      "originalDescription": "Plano de saude"
+    },
+    "taxa extra condominio": {
+      "category": "moradia",
+      "type": "expense",
+      "originalDescription": "Taxa extra condominio"
+    },
+    "mercado dezembro 2025": {
+      "category": "alimentacao",
+      "type": "expense",
+      "originalDescription": "Mercado Dezembro 2025"
+    },
+    "salario vitor": {
+      "category": "colaboradores",
+      "type": "expense",
+      "originalDescription": "Salario Vitor"
+    },
+    "salário dezembro 2025": {
+      "category": "salario",
+      "type": "income",
+      "originalDescription": "Salário Dezembro 2025"
+    },
+    "salario ju": {
+      "category": "colaboradores",
+      "type": "expense",
+      "originalDescription": "Salario Ju"
+    },
+    "salario gil": {
+      "category": "colaboradores",
+      "type": "expense",
+      "originalDescription": "Salario Gil"
+    }
+  },
+  "inconsistencies": [
+    {
+      "_id": "694045ab8d00e227aee29644",
+      "description": "Uber Beth e Gil",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-11-30T00:00:00.000Z",
+      "amount": 530,
+      "type": "expense"
+    },
+    {
+      "_id": "694045e48d00e227aee29653",
+      "description": "Manutencao Elevador",
+      "currentCategory": "moradia",
+      "expectedCategory": "outros_despesa",
+      "date": "2025-11-28T00:00:00.000Z",
+      "amount": 400,
+      "type": "expense"
+    },
+    {
+      "_id": "694046268d00e227aee2965f",
+      "description": "manutenção Lago",
+      "currentCategory": "moradia",
+      "expectedCategory": "manutencao",
+      "date": "2025-11-27T00:00:00.000Z",
+      "amount": 300,
+      "type": "expense"
+    },
+    {
+      "_id": "694045648d00e227aee2963e",
+      "description": "Ajuda Mae",
+      "currentCategory": "outros_despesa",
+      "expectedCategory": "outros",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 800,
+      "type": "expense"
+    },
+    {
+      "_id": "694041e58d00e227aee295a5",
+      "description": "Escola Bernardo",
+      "currentCategory": "educacao",
+      "expectedCategory": "bernardo",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 2842.43,
+      "type": "expense"
+    },
+    {
+      "_id": "694042618d00e227aee295ba",
+      "description": "Futebol Bernardo",
+      "currentCategory": "educacao",
+      "expectedCategory": "bernardo",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 335,
+      "type": "expense"
+    },
+    {
+      "_id": "694044468d00e227aee295ff",
+      "description": "Salario Beth",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 2500,
+      "type": "expense"
+    },
+    {
+      "_id": "694044548d00e227aee29605",
+      "description": "Salario Gil",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 2000,
+      "type": "expense"
+    },
+    {
+      "_id": "694044378d00e227aee295f9",
+      "description": "sALARIO VITOR",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 1200,
+      "type": "expense"
+    },
+    {
+      "_id": "694044248d00e227aee295f3",
+      "description": "Salario Ju",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 1200,
+      "type": "expense"
+    },
+    {
+      "_id": "69403ed88d00e227aee29448",
+      "description": "manutenção lago",
+      "currentCategory": "moradia",
+      "expectedCategory": "manutencao",
+      "date": "2025-10-22T00:00:00.000Z",
+      "amount": 300,
+      "type": "expense"
+    },
+    {
+      "_id": "69403fd38d00e227aee29472",
+      "description": "Salario ju",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-10-21T00:00:00.000Z",
+      "amount": 2000,
+      "type": "expense"
+    },
+    {
+      "_id": "69403fa68d00e227aee29466",
+      "description": "Salario vitor",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-10-20T00:00:00.000Z",
+      "amount": 1200,
+      "type": "expense"
+    },
+    {
+      "_id": "69403f338d00e227aee29460",
+      "description": "salario ju",
+      "currentCategory": "transporte",
+      "expectedCategory": "colaboradores",
+      "date": "2025-10-20T00:00:00.000Z",
+      "amount": 2000,
+      "type": "expense"
+    },
+    {
+      "_id": "69403f018d00e227aee29454",
+      "description": "manutencao elevador",
+      "currentCategory": "alimentacao",
+      "expectedCategory": "outros_despesa",
+      "date": "2025-10-16T00:00:00.000Z",
+      "amount": 400,
+      "type": "expense"
+    },
+    {
+      "_id": "694038973974ca3eab4e3e2a",
+      "description": "Cota extra condominium",
+      "currentCategory": "outros_despesa",
+      "expectedCategory": "moradia",
+      "date": "2025-10-10T00:00:00.000Z",
+      "amount": 7696.17,
+      "type": "expense"
+    },
+    {
+      "_id": "69403fbf8d00e227aee2946c",
+      "description": "Salario Beth",
+      "currentCategory": "alimentacao",
+      "expectedCategory": "colaboradores",
+      "date": "2025-10-08T00:00:00.000Z",
+      "amount": 2500,
+      "type": "expense"
+    },
+    {
+      "_id": "69403ba58d00e227aee293da",
+      "description": "Futebol Bernardo",
+      "currentCategory": "educacao",
+      "expectedCategory": "bernardo",
+      "date": "2025-10-05T00:00:00.000Z",
+      "amount": 335,
+      "type": "expense"
+    }
+  ],
+  "uniqueItems": [
+    {
+      "_id": "6940465d8d00e227aee2966b",
+      "description": "Quatro aguas",
+      "category": "alimentacao",
+      "date": "2025-11-29T00:00:00.000Z",
+      "amount": 60,
+      "type": "expense"
+    },
+    {
+      "_id": "694047f48d00e227aee296bc",
+      "description": "vitor",
+      "category": "aluguel_recebido",
+      "date": "2025-11-28T00:00:00.000Z",
+      "amount": 500,
+      "type": "income"
+    },
+    {
+      "_id": "694043fa8d00e227aee295ed",
+      "description": "Dermatologista eDUARDO",
+      "category": "saude",
+      "date": "2025-11-28T00:00:00.000Z",
+      "amount": 620,
+      "type": "expense"
+    },
+    {
+      "_id": "694047d18d00e227aee296b0",
+      "description": "ração",
+      "category": "pets",
+      "date": "2025-11-28T00:00:00.000Z",
+      "amount": 222.4,
+      "type": "expense"
+    },
+    {
+      "_id": "694045158d00e227aee29632",
+      "description": "bUS Ju",
+      "category": "transporte",
+      "date": "2025-11-27T00:00:00.000Z",
+      "amount": 125,
+      "type": "expense"
+    },
+    {
+      "_id": "694043e78d00e227aee295e7",
+      "description": "Suplementos eDUARDO",
+      "category": "saude",
+      "date": "2025-11-26T00:00:00.000Z",
+      "amount": 208.05,
+      "type": "expense"
+    },
+    {
+      "_id": "694043cd8d00e227aee295e1",
+      "description": "Saude Eduardo",
+      "category": "saude",
+      "date": "2025-11-26T00:00:00.000Z",
+      "amount": 700,
+      "type": "expense"
+    },
+    {
+      "_id": "694047e58d00e227aee296b6",
+      "description": "suplementação eduardo",
+      "category": "saude",
+      "date": "2025-11-21T00:00:00.000Z",
+      "amount": 182,
+      "type": "expense"
+    },
+    {
+      "_id": "694045518d00e227aee29638",
+      "description": "Parcela carro",
+      "category": "outros_despesa",
+      "date": "2025-11-21T00:00:00.000Z",
+      "amount": 11750,
+      "type": "expense"
+    },
+    {
+      "_id": "694044f08d00e227aee2962c",
+      "description": "Gildo",
+      "category": "compras",
+      "date": "2025-11-21T00:00:00.000Z",
+      "amount": 75,
+      "type": "expense"
+    },
+    {
+      "_id": "694044b58d00e227aee29620",
+      "description": "Vitor",
+      "category": "aluguel_recebido",
+      "date": "2025-11-21T00:00:00.000Z",
+      "amount": 500,
+      "type": "income"
+    },
+    {
+      "_id": "694044cc8d00e227aee29626",
+      "description": "Manutencao",
+      "category": "moradia",
+      "date": "2025-11-20T00:00:00.000Z",
+      "amount": 4260,
+      "type": "expense"
+    },
+    {
+      "_id": "694044a88d00e227aee2961a",
+      "description": "Beth",
+      "category": "aluguel_recebido",
+      "date": "2025-11-20T00:00:00.000Z",
+      "amount": 500,
+      "type": "income"
+    },
+    {
+      "_id": "694048008d00e227aee296c2",
+      "description": "gil",
+      "category": "aluguel_recebido",
+      "date": "2025-11-20T00:00:00.000Z",
+      "amount": 100,
+      "type": "income"
+    },
+    {
+      "_id": "694044758d00e227aee2960b",
+      "description": "Receita Federal Eduardo",
+      "category": "outros_despesa",
+      "date": "2025-11-13T00:00:00.000Z",
+      "amount": 1221.71,
+      "type": "expense"
+    },
+    {
+      "_id": "694044928d00e227aee29611",
+      "description": "Juliana",
+      "category": "aluguel_recebido",
+      "date": "2025-11-12T00:00:00.000Z",
+      "amount": 300,
+      "type": "income"
+    },
+    {
+      "_id": "694047ba8d00e227aee296aa",
+      "description": "cartão itau",
+      "category": "contas",
+      "date": "2025-11-10T00:00:00.000Z",
+      "amount": 2963.82,
+      "type": "expense"
+    },
+    {
+      "_id": "694042118d00e227aee295ab",
+      "description": "Condominio Skyline",
+      "category": "moradia",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 5488.25,
+      "type": "expense"
+    },
+    {
+      "_id": "694047a88d00e227aee296a4",
+      "description": "fgts juliana",
+      "category": "transporte",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 607.12,
+      "type": "expense"
+    },
+    {
+      "_id": "694047948d00e227aee2969e",
+      "description": "condominio agua blu",
+      "category": "moradia",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 191.3,
+      "type": "expense"
+    },
+    {
+      "_id": "694047858d00e227aee29698",
+      "description": "caem",
+      "category": "saude",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 2761.34,
+      "type": "expense"
+    },
+    {
+      "_id": "694046808d00e227aee29671",
+      "description": "Rescisão Juliana",
+      "category": "transporte",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 443.06,
+      "type": "expense"
+    },
+    {
+      "_id": "694046388d00e227aee29665",
+      "description": "Enel",
+      "category": "moradia",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 2443.41,
+      "type": "expense"
+    },
+    {
+      "_id": "694042ad8d00e227aee295c0",
+      "description": "Texnet",
+      "category": "moradia",
+      "date": "2025-11-05T00:00:00.000Z",
+      "amount": 113.9,
+      "type": "expense"
+    },
+    {
+      "_id": "694041838d00e227aee29570",
+      "description": "salario eduardo",
+      "category": "salario",
+      "date": "2025-11-01T00:00:00.000Z",
+      "amount": 62000,
+      "type": "income"
+    },
+    {
+      "_id": "694040f08d00e227aee294ab",
+      "description": "receita federal",
+      "category": "alimentacao",
+      "date": "2025-10-30T00:00:00.000Z",
+      "amount": 1221.71,
+      "type": "expense"
+    },
+    {
+      "_id": "694040dd8d00e227aee294a5",
+      "description": "doação igreja",
+      "category": "outros_despesa",
+      "date": "2025-10-23T00:00:00.000Z",
+      "amount": 50,
+      "type": "expense"
+    },
+    {
+      "_id": "69403f138d00e227aee2945a",
+      "description": "Fgts Ju",
+      "category": "transporte",
+      "date": "2025-10-17T00:00:00.000Z",
+      "amount": 557.23,
+      "type": "expense"
+    },
+    {
+      "_id": "6940406b8d00e227aee29487",
+      "description": "caem",
+      "category": "saude",
+      "date": "2025-10-17T00:00:00.000Z",
+      "amount": 2752.95,
+      "type": "expense"
+    },
+    {
+      "_id": "69403ef38d00e227aee2944e",
+      "description": "Enel",
+      "category": "moradia",
+      "date": "2025-10-17T00:00:00.000Z",
+      "amount": 3807.1,
+      "type": "expense"
+    },
+    {
+      "_id": "694040c88d00e227aee2949f",
+      "description": "massagem",
+      "category": "saude",
+      "date": "2025-10-17T00:00:00.000Z",
+      "amount": 160,
+      "type": "expense"
+    },
+    {
+      "_id": "69403e418d00e227aee2942d",
+      "description": "6- Aguas",
+      "category": "alimentacao",
+      "date": "2025-10-16T00:00:00.000Z",
+      "amount": 90,
+      "type": "expense"
+    },
+    {
+      "_id": "694040818d00e227aee2948d",
+      "description": "cartão itau",
+      "category": "contas",
+      "date": "2025-10-16T00:00:00.000Z",
+      "amount": 5210.75,
+      "type": "expense"
+    },
+    {
+      "_id": "69403cd78d00e227aee293fb",
+      "description": "Uber Gil e, Beth e ônibus Ju",
+      "category": "transporte",
+      "date": "2025-10-15T00:00:00.000Z",
+      "amount": 976,
+      "type": "expense"
+    },
+    {
+      "_id": "6940409c8d00e227aee29493",
+      "description": "condominio agua - blu",
+      "category": "alimentacao",
+      "date": "2025-10-15T00:00:00.000Z",
+      "amount": 185.9,
+      "type": "expense"
+    },
+    {
+      "_id": "69403de88d00e227aee2941b",
+      "description": "Suplementacao eduardo e Debora",
+      "category": "saude",
+      "date": "2025-10-15T00:00:00.000Z",
+      "amount": 5000,
+      "type": "expense"
+    },
+    {
+      "_id": "69403e038d00e227aee29421",
+      "description": "Cartão Santander",
+      "category": "contas",
+      "date": "2025-10-15T00:00:00.000Z",
+      "amount": 883.45,
+      "type": "expense"
+    },
+    {
+      "_id": "69403e5b8d00e227aee29433",
+      "description": "Suplementos eduardo",
+      "category": "saude",
+      "date": "2025-10-15T00:00:00.000Z",
+      "amount": 445,
+      "type": "expense"
+    },
+    {
+      "_id": "69403c1d8d00e227aee293f2",
+      "description": "Empréstimo Vitor",
+      "category": "outros_despesa",
+      "date": "2025-10-10T00:00:00.000Z",
+      "amount": 4000,
+      "type": "expense"
+    },
+    {
+      "_id": "6940386d3974ca3eab4e3e24",
+      "description": "Condomínio",
+      "category": "moradia",
+      "date": "2025-10-10T00:00:00.000Z",
+      "amount": 5488.25,
+      "type": "expense"
+    },
+    {
+      "_id": "69403c058d00e227aee293ec",
+      "description": "Taxa carro Debora",
+      "category": "outros_despesa",
+      "date": "2025-10-10T00:00:00.000Z",
+      "amount": 200,
+      "type": "expense"
+    },
+    {
+      "_id": "69403b858d00e227aee293d4",
+      "description": "Condominio - gas",
+      "category": "moradia",
+      "date": "2025-10-10T00:00:00.000Z",
+      "amount": 355.99,
+      "type": "expense"
+    },
+    {
+      "_id": "694040b68d00e227aee29499",
+      "description": "ração",
+      "category": "pets",
+      "date": "2025-10-09T00:00:00.000Z",
+      "amount": 232.54,
+      "type": "expense"
+    },
+    {
+      "_id": "69403dcf8d00e227aee29415",
+      "description": "Personal eduardo",
+      "category": "saude",
+      "date": "2025-10-09T00:00:00.000Z",
+      "amount": 1126,
+      "type": "expense"
+    },
+    {
+      "_id": "69403e7d8d00e227aee29439",
+      "description": "Nutricionista eduardo",
+      "category": "saude",
+      "date": "2025-10-08T00:00:00.000Z",
+      "amount": 1100,
+      "type": "expense"
+    },
+    {
+      "_id": "69403e8e8d00e227aee2943f",
+      "description": "telnet",
+      "category": "moradia",
+      "date": "2025-10-08T00:00:00.000Z",
+      "amount": 113.9,
+      "type": "expense"
+    },
+    {
+      "_id": "69403bd98d00e227aee293e6",
+      "description": "Taxa de transferencia carro Debora",
+      "category": "outros_despesa",
+      "date": "2025-10-02T00:00:00.000Z",
+      "amount": 325.61,
+      "type": "expense"
+    },
+    {
+      "_id": "69403a103974ca3eab4e3ec7",
+      "description": "Ajuda mãe",
+      "category": "outros_despesa",
+      "date": "2025-10-01T00:00:00.000Z",
+      "amount": 800,
+      "type": "expense"
+    },
+    {
+      "_id": "693d67478d751d0e5e66bd9e",
+      "description": "Salário Janeiro",
+      "category": "salario",
+      "date": "2025-01-05T00:00:00.000Z",
+      "amount": 8500,
+      "type": "income"
+    },
+    {
+      "_id": "693d69018d751d0e5e66be30",
+      "description": "Salário Dezembro",
+      "category": "salario",
+      "date": "2024-12-05T00:00:00.000Z",
+      "amount": 5000,
+      "type": "income"
+    }
+  ],
+  "summary": {
+    "total": 144,
+    "reference": 58,
+    "previous": 80,
+    "correct": 12,
+    "toFix": 18,
+    "unique": 50
+  }
+}

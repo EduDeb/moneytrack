@@ -184,7 +184,7 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 
 // @route   POST /api/accounts/:id/adjust
 // @desc    Ajustar saldo da conta
-router.post('/:id/adjust', async (req, res) => {
+router.post('/:id/adjust', validateObjectId(), async (req, res) => {
   try {
     const { newBalance, description } = req.body
 

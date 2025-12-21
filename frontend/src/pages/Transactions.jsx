@@ -1,6 +1,6 @@
-import { useState, useEffect, useContext, useMemo } from 'react'
+import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react'
 import api from '../services/api'
-import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search, Sparkles } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import { useCategories } from '../contexts/CategoriesContext'
 import MonthSelector from '../components/MonthSelector'
@@ -22,6 +22,80 @@ function Transactions() {
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(null)
   const [sortOrder, setSortOrder] = useState('desc') // 'desc' = mais recentes, 'asc' = mais antigos
+
+  // Auto-sugestão de categoria
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [autoFilled, setAutoFilled] = useState(false)
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const debounceRef = useRef(null)
+  const descriptionInputRef = useRef(null)
+
+  // Função para buscar sugestão de categoria baseada na descrição
+  const fetchCategorySuggestion = useCallback(async (description) => {
+    if (!description || description.trim().length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    setSuggestLoading(true)
+    try {
+      const response = await api.get(`/transactions/suggest-category?description=${encodeURIComponent(description)}`)
+      const data = response.data
+
+      if (data.category && data.confidence >= 70) {
+        // Auto-preencher categoria se confiança alta
+        setForm(prev => ({
+          ...prev,
+          category: data.category,
+          type: data.type || prev.type
+        }))
+        setAutoFilled(true)
+        setSuggestions(data.suggestions || [])
+      } else if (data.suggestions && data.suggestions.length > 0) {
+        setSuggestions(data.suggestions)
+        setShowSuggestions(true)
+      } else {
+        setSuggestions([])
+        setShowSuggestions(false)
+      }
+    } catch (error) {
+      console.error('Erro ao buscar sugestão:', error)
+    } finally {
+      setSuggestLoading(false)
+    }
+  }, [])
+
+  // Handler para mudança na descrição com debounce
+  const handleDescriptionChange = useCallback((e) => {
+    const value = e.target.value
+    setForm(prev => ({ ...prev, description: value }))
+    setAutoFilled(false)
+
+    // Limpar timeout anterior
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+
+    // Configurar novo debounce (300ms)
+    debounceRef.current = setTimeout(() => {
+      fetchCategorySuggestion(value)
+    }, 300)
+  }, [fetchCategorySuggestion])
+
+  // Aplicar sugestão selecionada
+  const applySuggestion = useCallback((suggestion) => {
+    setForm(prev => ({
+      ...prev,
+      description: suggestion.description,
+      category: suggestion.category,
+      type: suggestion.type || prev.type
+    }))
+    setAutoFilled(true)
+    setShowSuggestions(false)
+    setSuggestions([])
+  }, [])
 
   // Pegar primeira categoria disponível
   const getDefaultCategory = (type) => {
@@ -146,6 +220,10 @@ function Transactions() {
       amount: transaction.amount.toString(),
       date: transaction.date.split('T')[0] // Extrai apenas YYYY-MM-DD sem conversão de timezone
     })
+    // Limpar estados de sugestão ao editar
+    setAutoFilled(false)
+    setSuggestions([])
+    setShowSuggestions(false)
     setShowModal(true)
   }
 
@@ -157,6 +235,14 @@ function Transactions() {
       amount: '',
       date: new Date().toISOString().split('T')[0]
     })
+    // Limpar estados de sugestão
+    setAutoFilled(false)
+    setSuggestions([])
+    setShowSuggestions(false)
+    setSuggestLoading(false)
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
   }
 
   const formatCurrency = (value) => {
@@ -196,6 +282,14 @@ function Transactions() {
 
   return (
     <div>
+      {/* CSS para animação de loading */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
       {/* Header com título e seletor de mês */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>Transações</h1>
@@ -475,14 +569,22 @@ function Transactions() {
               </div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: colors.text }}>Categoria</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: colors.text }}>
+                  Categoria
+                  {autoFilled && (
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#22c55e', fontWeight: '400' }}>
+                      (preenchida automaticamente)
+                    </span>
+                  )}
+                </label>
                 <select
                   value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, category: e.target.value }); setAutoFilled(false); }}
                   style={{
                     width: '100%', padding: '10px 12px', borderRadius: '8px',
-                    border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard,
-                    color: colors.text, fontSize: '14px'
+                    border: `1px solid ${autoFilled ? '#22c55e' : colors.border}`,
+                    backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px',
+                    transition: 'border-color 0.2s'
                   }}
                 >
                   {(form.type === 'income' ? incomeCategories : expenseCategories).map(c => (
@@ -491,21 +593,64 @@ function Transactions() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
+              <div style={{ marginBottom: '16px', position: 'relative' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: colors.text }}>Descrição</label>
-                <input
-                  type="text"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Ex: Almoço no restaurante"
-                  required
-                  maxLength={200}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: '8px',
-                    border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard,
-                    color: colors.text, fontSize: '14px', boxSizing: 'border-box'
-                  }}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    ref={descriptionInputRef}
+                    type="text"
+                    value={form.description}
+                    onChange={handleDescriptionChange}
+                    placeholder="Ex: Almoço no restaurante"
+                    required
+                    maxLength={200}
+                    autoComplete="off"
+                    style={{
+                      width: '100%', padding: '10px 12px', paddingRight: suggestLoading || autoFilled ? '40px' : '12px',
+                      borderRadius: '8px', border: `1px solid ${autoFilled ? '#22c55e' : colors.border}`,
+                      backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px', boxSizing: 'border-box',
+                      transition: 'border-color 0.2s'
+                    }}
+                  />
+                  {suggestLoading && (
+                    <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
+                      <span style={{ width: '16px', height: '16px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }}></span>
+                    </div>
+                  )}
+                  {autoFilled && !suggestLoading && (
+                    <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#22c55e' }} title="Categoria preenchida automaticamente">
+                      <Sparkles size={18} />
+                    </div>
+                  )}
+                </div>
+                {/* Dropdown de sugestões */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px',
+                    backgroundColor: colors.backgroundCard, border: `1px solid ${colors.border}`,
+                    borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 10,
+                    maxHeight: '200px', overflowY: 'auto'
+                  }}>
+                    {suggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => applySuggestion(s)}
+                        style={{
+                          padding: '10px 12px', cursor: 'pointer',
+                          borderBottom: idx < suggestions.length - 1 ? `1px solid ${colors.border}` : 'none',
+                          transition: 'background-color 0.15s'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontSize: '14px', color: colors.text, fontWeight: '500' }}>{s.description}</div>
+                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '2px' }}>
+                          {getCategoryLabel(s.category)} • {s.count}x usado
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: '16px' }}>

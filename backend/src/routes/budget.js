@@ -64,8 +64,9 @@ router.get('/status', async (req, res) => {
     // Montar status de cada orçamento
     const budgetStatus = budgets.map(b => {
       const spent = spentByCategory[b.category] || 0
-      const remaining = b.limit - spent
-      const percentage = (spent / b.limit) * 100
+      const remaining = Math.max(b.limit - spent, 0) // Nunca negativo
+      const overbudget = spent > b.limit ? spent - b.limit : 0 // Quanto excedeu
+      const percentage = b.limit > 0 ? (spent / b.limit) * 100 : 0 // Porcentagem real (pode ser > 100%)
 
       return {
         _id: b._id,
@@ -73,7 +74,8 @@ router.get('/status', async (req, res) => {
         limit: b.limit,
         spent,
         remaining,
-        percentage: Math.min(percentage, 100),
+        overbudget, // Novo campo: quanto excedeu o limite
+        percentage, // Agora mostra valor real (ex: 120% se excedeu 20%)
         status: percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok'
       }
     })

@@ -172,33 +172,40 @@ const checkUnusualSpending = async (userId) => {
 const checkUpcomingBills = async (userId) => {
   const alerts = []
 
-  const dueDate = new Date()
-  dueDate.setDate(dueDate.getDate() + ALERT_CONFIG.billDueDays)
+  const today = new Date()
+  const currentDay = today.getUTCDate()
+  const currentMonth = today.getUTCMonth() + 1
+  const currentYear = today.getUTCFullYear()
 
+  // Buscar contas pendentes do mês atual
   const upcomingBills = await Bill.find({
     user: userId,
-    status: 'pending',
-    dueDate: { $lte: dueDate }
-  }).sort({ dueDate: 1 })
+    isPaid: false,
+    currentMonth: currentMonth,
+    currentYear: currentYear
+  }).sort({ dueDay: 1 })
 
   for (const bill of upcomingBills) {
-    const daysUntilDue = Math.ceil((bill.dueDate - new Date()) / (1000 * 60 * 60 * 24))
+    const daysUntilDue = bill.dueDay - currentDay
 
-    alerts.push({
-      type: 'BILL_DUE',
-      priority: daysUntilDue <= 1 ? 'critical' : 'high',
-      title: daysUntilDue <= 0 ? 'Conta Vencida!' : 'Conta a Vencer',
-      message: daysUntilDue <= 0
-        ? `A conta "${bill.name}" venceu! Valor: R$ ${bill.amount.toFixed(2)}`
-        : `A conta "${bill.name}" vence em ${daysUntilDue} dia(s). Valor: R$ ${bill.amount.toFixed(2)}`,
-      data: {
-        billId: bill._id,
-        billName: bill.name,
-        amount: bill.amount,
-        dueDate: bill.dueDate,
-        daysUntilDue
-      }
-    })
+    // Filtrar apenas contas que vencem em até X dias ou já venceram
+    if (daysUntilDue <= ALERT_CONFIG.billDueDays) {
+      alerts.push({
+        type: 'BILL_DUE',
+        priority: daysUntilDue <= 1 ? 'critical' : 'high',
+        title: daysUntilDue <= 0 ? 'Conta Vencida!' : 'Conta a Vencer',
+        message: daysUntilDue <= 0
+          ? `A conta "${bill.name}" venceu! Valor: R$ ${bill.amount.toFixed(2)}`
+          : `A conta "${bill.name}" vence em ${daysUntilDue} dia(s). Valor: R$ ${bill.amount.toFixed(2)}`,
+        data: {
+          billId: bill._id,
+          billName: bill.name,
+          amount: bill.amount,
+          dueDay: bill.dueDay,
+          daysUntilDue
+        }
+      })
+    }
   }
 
   return alerts
@@ -533,10 +540,17 @@ const calculateFinancialHealthScore = async (userId) => {
     }
 
     // Fator 2: Contas em atraso (25 pontos)
+    const today = new Date()
+    const currentDay = today.getUTCDate()
+    const currentMonth = today.getUTCMonth() + 1
+    const currentYear = today.getUTCFullYear()
+
     const overdueBills = await Bill.countDocuments({
       user: userId,
-      status: 'pending',
-      dueDate: { $lt: new Date() }
+      isPaid: false,
+      currentMonth: currentMonth,
+      currentYear: currentYear,
+      dueDay: { $lt: currentDay }
     })
 
     if (overdueBills > 0) {

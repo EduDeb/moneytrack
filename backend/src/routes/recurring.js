@@ -58,13 +58,55 @@ router.post('/', async (req, res) => {
       isInstallment, totalInstallments, notifyDaysBefore
     } = req.body
 
-    // Calcular próxima data
-    let nextDueDate = new Date(startDate || Date.now())
+    const now = new Date()
+
+    // Calcular startDate corretamente baseado no dayOfMonth
+    // Se o usuário define que a recorrência é no dia X, o startDate deve ser o primeiro dia X válido
+    let calculatedStartDate = startDate ? new Date(startDate) : new Date()
+    let nextDueDate = new Date(calculatedStartDate)
+
     if (dayOfMonth && frequency === 'monthly') {
-      nextDueDate.setDate(dayOfMonth)
-      if (nextDueDate < new Date()) {
+      // Ajustar startDate para o dia correto do mês
+      const year = calculatedStartDate.getFullYear()
+      const month = calculatedStartDate.getMonth()
+
+      // Calcular o último dia do mês para não exceder
+      const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
+      const actualDay = Math.min(dayOfMonth, lastDayOfMonth)
+
+      calculatedStartDate = new Date(year, month, actualDay, 12, 0, 0)
+      nextDueDate = new Date(calculatedStartDate)
+
+      // Se a data calculada já passou neste mês, avançar para o próximo
+      if (nextDueDate < now) {
         nextDueDate.setMonth(nextDueDate.getMonth() + 1)
+        // Recalcular o dia para o novo mês
+        const newLastDay = new Date(nextDueDate.getFullYear(), nextDueDate.getMonth() + 1, 0).getDate()
+        nextDueDate.setDate(Math.min(dayOfMonth, newLastDay))
       }
+    } else if (frequency === 'weekly' && dayOfWeek !== undefined) {
+      // Para semanal, ajustar para o próximo dia da semana
+      const currentDayOfWeek = calculatedStartDate.getDay()
+      const daysUntilTarget = (dayOfWeek - currentDayOfWeek + 7) % 7
+      calculatedStartDate.setDate(calculatedStartDate.getDate() + daysUntilTarget)
+      nextDueDate = new Date(calculatedStartDate)
+    } else if (frequency === 'weekly') {
+      // Semanal sem dia definido: usar a data de início como referência
+      nextDueDate = new Date(calculatedStartDate)
+      if (nextDueDate < now) {
+        // Avançar para a próxima semana
+        while (nextDueDate < now) {
+          nextDueDate.setDate(nextDueDate.getDate() + 7)
+        }
+      }
+    }
+
+    // Validar que endDate não seja antes de startDate
+    let validatedEndDate = endDate ? new Date(endDate) : undefined
+    if (validatedEndDate && validatedEndDate < calculatedStartDate) {
+      // Se endDate for antes de startDate, ajustar endDate para um ano após startDate
+      validatedEndDate = new Date(calculatedStartDate)
+      validatedEndDate.setFullYear(validatedEndDate.getFullYear() + 1)
     }
 
     const recurring = await Recurring.create({
@@ -77,8 +119,8 @@ router.post('/', async (req, res) => {
       frequency: frequency || 'monthly',
       dayOfMonth,
       dayOfWeek,
-      startDate: startDate || Date.now(),
-      endDate,
+      startDate: calculatedStartDate,
+      endDate: validatedEndDate,
       nextDueDate,
       isInstallment: isInstallment || false,
       totalInstallments: totalInstallments || 1,

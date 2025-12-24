@@ -272,14 +272,63 @@ router.put('/:id', async (req, res) => {
 
     const allowedUpdates = [
       'name', 'amount', 'category', 'account', 'frequency',
-      'dayOfMonth', 'dayOfWeek', 'endDate', 'isActive', 'notifyDaysBefore'
+      'dayOfMonth', 'dayOfWeek', 'endDate', 'isActive', 'notifyDaysBefore',
+      'startDate'
     ]
+
+    // Verificar se dayOfMonth, dayOfWeek ou startDate estão sendo alterados
+    const dayChanged = req.body.dayOfMonth !== undefined || req.body.dayOfWeek !== undefined
+    const startDateChanged = req.body.startDate !== undefined
 
     allowedUpdates.forEach(field => {
       if (req.body[field] !== undefined) {
         recurring[field] = req.body[field]
       }
     })
+
+    // Recalcular nextDueDate se o dia foi alterado
+    if (dayChanged || startDateChanged) {
+      const now = new Date()
+      const frequency = recurring.frequency
+
+      if (frequency === 'monthly' && recurring.dayOfMonth) {
+        const year = now.getFullYear()
+        const month = now.getMonth()
+        const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
+        const actualDay = Math.min(recurring.dayOfMonth, lastDayOfMonth)
+
+        let nextDueDate = new Date(year, month, actualDay, 12, 0, 0)
+
+        // Se a data já passou neste mês, avançar para o próximo
+        if (nextDueDate < now) {
+          nextDueDate.setMonth(nextDueDate.getMonth() + 1)
+          const newLastDay = new Date(nextDueDate.getFullYear(), nextDueDate.getMonth() + 1, 0).getDate()
+          nextDueDate.setDate(Math.min(recurring.dayOfMonth, newLastDay))
+        }
+
+        recurring.nextDueDate = nextDueDate
+        recurring.startDate = nextDueDate
+      } else if (frequency === 'weekly') {
+        // Para semanal, usar startDate se fornecido, senão calcular próximo dia da semana
+        if (req.body.startDate) {
+          const newStartDate = new Date(req.body.startDate)
+          recurring.startDate = newStartDate
+          recurring.nextDueDate = newStartDate
+          recurring.dayOfWeek = newStartDate.getDay()
+        } else if (recurring.dayOfWeek !== undefined) {
+          const currentDayOfWeek = now.getDay()
+          let daysUntilTarget = (recurring.dayOfWeek - currentDayOfWeek + 7) % 7
+          if (daysUntilTarget === 0) daysUntilTarget = 7 // Próxima semana se for hoje
+
+          const nextDueDate = new Date(now)
+          nextDueDate.setDate(now.getDate() + daysUntilTarget)
+          nextDueDate.setHours(12, 0, 0, 0)
+
+          recurring.nextDueDate = nextDueDate
+          recurring.startDate = nextDueDate
+        }
+      }
+    }
 
     await recurring.save()
     res.json({ recurring })

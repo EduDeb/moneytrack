@@ -56,83 +56,150 @@ router.get('/', async (req, res) => {
       year: currentYear
     })
 
-    // Criar um Set com IDs das recorrências já pagas neste mês
-    const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
+    // Criar um Map com pagamentos por recorrência e dia
+    const paidRecurringMap = new Map()
+    payments.forEach(p => {
+      const key = `${p.recurring.toString()}_${p.paidAt ? new Date(p.paidAt).getUTCDate() : 0}`
+      paidRecurringMap.set(key, true)
+      // Também marcar por recurring ID simples para compatibilidade
+      paidRecurringMap.set(p.recurring.toString(), true)
+    })
 
     // Converter recorrências para formato de bill
-    const recurringBills = recurrings.map(r => {
-      // Calcular a data de vencimento para o mês selecionado
-      let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
+    const recurringBills = []
 
-      // Ajustar para o último dia do mês se necessário
-      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
-      if (dueDay > lastDayOfMonth) {
-        dueDay = lastDayOfMonth
-      }
-
-      // Criar a data de vencimento para este mês específico
-      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
-
-      const today = new Date()
-      const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
-
-      // Verificar se a recorrência começou antes ou durante este mês
+    recurrings.forEach(r => {
       const recurringStartDate = new Date(r.startDate)
       const recurringStartMonth = recurringStartDate.getUTCMonth() + 1
       const recurringStartYear = recurringStartDate.getUTCFullYear()
+      const recurringEndDate = r.endDate ? new Date(r.endDate) : null
 
       // Se a recorrência começa depois do mês atual, não mostrar
       if (recurringStartYear > currentYear ||
           (recurringStartYear === currentYear && recurringStartMonth > currentMonth)) {
-        return null
+        return
       }
 
-      // Para parcelamentos, calcular qual parcela corresponde ao mês selecionado
-      let installmentForThisMonth = 1
-      if (r.isInstallment) {
-        const monthsDiff = (currentYear - recurringStartYear) * 12 + (currentMonth - recurringStartMonth)
-        installmentForThisMonth = monthsDiff + 1
+      const today = new Date()
+      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
 
-        if (installmentForThisMonth > r.totalInstallments || installmentForThisMonth < 1) {
-          return null
+      if (r.frequency === 'weekly') {
+        // Para recorrências semanais, gerar todas as ocorrências do mês
+        const dayOfWeek = r.dayOfWeek !== undefined ? r.dayOfWeek : recurringStartDate.getUTCDay()
+
+        // Encontrar o primeiro dia do mês que corresponde ao dia da semana
+        const firstOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 12, 0, 0))
+        const firstDayOfWeek = firstOfMonth.getUTCDay()
+        let daysToAdd = (dayOfWeek - firstDayOfWeek + 7) % 7
+        let currentDay = 1 + daysToAdd
+
+        let weekNumber = 1
+        while (currentDay <= lastDayOfMonth) {
+          const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, currentDay, 12, 0, 0))
+
+          // Verificar se esta data está dentro do período da recorrência
+          if (dueDate >= recurringStartDate && (!recurringEndDate || dueDate <= recurringEndDate)) {
+            const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+
+            // Verificar se esta semana específica foi paga
+            const paymentKey = `${r._id.toString()}_${currentDay}`
+            const isPaidThisWeek = paidRecurringMap.has(paymentKey)
+
+            let urgency = 'normal'
+            if (isPaidThisWeek) {
+              urgency = 'paid'
+            } else if (daysUntilDue < 0) {
+              urgency = 'overdue'
+            } else if (daysUntilDue === 0) {
+              urgency = 'today'
+            } else if (daysUntilDue <= 3) {
+              urgency = 'soon'
+            } else if (daysUntilDue <= 7) {
+              urgency = 'upcoming'
+            }
+
+            recurringBills.push({
+              _id: `${r._id}_week${weekNumber}`,
+              name: `${r.name} (Sem ${weekNumber})`,
+              category: r.category,
+              amount: r.amount,
+              dueDay: currentDay,
+              isRecurring: true,
+              isPaid: isPaidThisWeek,
+              isFromRecurring: true,
+              recurringId: r._id,
+              account: r.account,
+              urgency,
+              daysUntilDue,
+              nextDueDate: dueDate,
+              isInstallment: false,
+              frequency: 'weekly',
+              weekNumber
+            })
+          }
+
+          currentDay += 7
+          weekNumber++
         }
-      }
+      } else {
+        // Para recorrências mensais (código original)
+        let dueDay = r.dayOfMonth || recurringStartDate.getUTCDate()
 
-      // Verificar se foi pago usando a tabela RecurringPayment
-      const isPaidThisMonth = paidRecurringIds.has(r._id.toString())
+        // Ajustar para o último dia do mês se necessário
+        if (dueDay > lastDayOfMonth) {
+          dueDay = lastDayOfMonth
+        }
 
-      let urgency = 'normal'
-      if (isPaidThisMonth) {
-        urgency = 'paid'
-      } else if (daysUntilDue < 0) {
-        urgency = 'overdue'
-      } else if (daysUntilDue === 0) {
-        urgency = 'today'
-      } else if (daysUntilDue <= 3) {
-        urgency = 'soon'
-      } else if (daysUntilDue <= 7) {
-        urgency = 'upcoming'
-      }
+        const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
+        const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
 
-      return {
-        _id: r._id,
-        name: r.isInstallment ? `${r.name} (${installmentForThisMonth}/${r.totalInstallments})` : r.name,
-        category: r.category,
-        amount: r.amount,
-        dueDay: dueDay,
-        isRecurring: true,
-        isPaid: isPaidThisMonth,
-        isFromRecurring: true,
-        recurringId: r._id,
-        account: r.account,
-        urgency,
-        daysUntilDue,
-        nextDueDate: dueDate,
-        isInstallment: r.isInstallment,
-        currentInstallment: installmentForThisMonth,
-        totalInstallments: r.totalInstallments
+        // Para parcelamentos, calcular qual parcela corresponde ao mês selecionado
+        let installmentForThisMonth = 1
+        if (r.isInstallment) {
+          const monthsDiff = (currentYear - recurringStartYear) * 12 + (currentMonth - recurringStartMonth)
+          installmentForThisMonth = monthsDiff + 1
+
+          if (installmentForThisMonth > r.totalInstallments || installmentForThisMonth < 1) {
+            return
+          }
+        }
+
+        // Verificar se foi pago usando a tabela RecurringPayment
+        const isPaidThisMonth = paidRecurringMap.has(r._id.toString())
+
+        let urgency = 'normal'
+        if (isPaidThisMonth) {
+          urgency = 'paid'
+        } else if (daysUntilDue < 0) {
+          urgency = 'overdue'
+        } else if (daysUntilDue === 0) {
+          urgency = 'today'
+        } else if (daysUntilDue <= 3) {
+          urgency = 'soon'
+        } else if (daysUntilDue <= 7) {
+          urgency = 'upcoming'
+        }
+
+        recurringBills.push({
+          _id: r._id,
+          name: r.isInstallment ? `${r.name} (${installmentForThisMonth}/${r.totalInstallments})` : r.name,
+          category: r.category,
+          amount: r.amount,
+          dueDay: dueDay,
+          isRecurring: true,
+          isPaid: isPaidThisMonth,
+          isFromRecurring: true,
+          recurringId: r._id,
+          account: r.account,
+          urgency,
+          daysUntilDue,
+          nextDueDate: dueDate,
+          isInstallment: r.isInstallment,
+          currentInstallment: installmentForThisMonth,
+          totalInstallments: r.totalInstallments
+        })
       }
-    }).filter(r => r !== null)
+    })
 
     // Filtrar por status se necessário
     let filteredRecurringBills = recurringBills

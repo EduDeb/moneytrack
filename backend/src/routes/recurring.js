@@ -11,10 +11,15 @@ router.use(protect)
 // @desc    Listar todas as recorrências do usuário
 router.get('/', async (req, res) => {
   try {
-    const { type, isActive = true } = req.query
+    const { type, isActive } = req.query
     const query = { user: req.user._id }
     if (type) query.type = type
-    if (isActive !== 'all') query.isActive = isActive === 'true'
+    // Se isActive não for especificado ou for 'true', filtrar por isActive=true
+    // Se for 'all', não filtrar
+    // Se for 'false', filtrar por isActive=false
+    if (isActive !== 'all') {
+      query.isActive = isActive === 'false' ? false : true
+    }
 
     const recurrences = await Recurring.find(query)
       .populate('account', 'name color')

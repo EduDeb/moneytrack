@@ -296,13 +296,17 @@ function Dashboard() {
 
     setPayingBill(bill._id)
     try {
+      // Usar o mês/ano atual para pagamento no Dashboard
+      const now = new Date()
       await api.post(`/bills/${bill._id}/pay`, {
-        isFromRecurring: bill.isFromRecurring || false
+        isFromRecurring: bill.isFromRecurring || false,
+        month: now.getMonth() + 1,
+        year: now.getFullYear()
       })
       fetchData()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
-      alert('Erro ao pagar conta. Tente novamente.')
+      alert(error.response?.data?.message || 'Erro ao pagar conta. Tente novamente.')
     } finally {
       setPayingBill(null)
     }
@@ -446,44 +450,49 @@ function Dashboard() {
       </div>
 
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-tour="summary-cards">
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '16px',
+        marginBottom: '24px'
+      }} data-tour="summary-cards">
+        <div className="card" style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p className="text-sm text-gray-500">Receitas (mês)</p>
-              <p className="text-2xl font-bold text-green-600">
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {formatCurrency(transactionSummary?.income)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
               <TrendingUp className="text-green-600" size={24} />
             </div>
           </div>
         </div>
 
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="card" style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p className="text-sm text-gray-500">Despesas (mês)</p>
-              <p className="text-2xl font-bold text-red-600">
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {formatCurrency(transactionSummary?.expenses)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
               <TrendingDown className="text-red-600" size={24} />
             </div>
           </div>
         </div>
 
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="card" style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p className="text-sm text-gray-500">Saldo (mês)</p>
-              <p className={`text-2xl font-bold ${(transactionSummary?.balance || 0) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.balance || 0) >= 0 ? '#2563eb' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {formatCurrency(transactionSummary?.balance)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
               <Wallet className="text-blue-600" size={24} />
             </div>
           </div>
@@ -494,26 +503,27 @@ function Dashboard() {
           border: `2px solid ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? '#22c55e' : '#ef4444'}`,
           background: (transactionSummary?.accumulatedBalance || 0) >= 0
             ? (isDark ? 'rgba(34, 197, 94, 0.1)' : '#f0fdf4')
-            : (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2')
+            : (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2'),
+          minWidth: 0
         }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm" style={{ color: colors.textSecondary, fontWeight: '600' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p className="text-sm" style={{ color: colors.textSecondary, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                 Saldo Acumulado
                 <InfoTooltip position="right">
                   Soma de todas as receitas menos despesas desde o início. Funciona como o saldo de uma conta corrente.
                 </InfoTooltip>
               </p>
-              <p className={`text-2xl font-bold ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.accumulatedBalance || 0) >= 0 ? '#16a34a' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {formatCurrency(transactionSummary?.accumulatedBalance)}
               </p>
               {transactionSummary?.previousBalance !== 0 && transactionSummary?.previousBalance !== undefined && (
-                <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px' }}>
+                <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   Meses anteriores: {formatCurrency(transactionSummary?.previousBalance)}
                 </p>
               )}
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'bg-green-100' : 'bg-red-100'}`} style={{ flexShrink: 0 }}>
               <PiggyBank className={(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'} size={24} />
             </div>
           </div>

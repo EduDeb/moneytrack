@@ -170,12 +170,15 @@ function Bills() {
     if (!confirm(`Confirma pagamento de ${formatCurrency(bill.amount)} para "${bill.name}"?`)) return
     try {
       await api.post(`/bills/${bill._id}/pay`, {
-        isFromRecurring: bill.isFromRecurring || false
+        isFromRecurring: bill.isFromRecurring || false,
+        month: selectedMonth,
+        year: selectedYear
       })
       fetchBills()
       fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
+      alert(error.response?.data?.message || 'Erro ao pagar conta')
     }
   }
 

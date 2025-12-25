@@ -46,13 +46,23 @@ echo -e "${GREEN}🚀 Iniciando Backend (porta 3001)...${NC}"
 cd "$PROJECT_DIR/backend"
 npm run dev > /tmp/moneytrack-backend.log 2>&1 &
 BACKEND_PID=$!
-sleep 3
 
-# Verificar se backend iniciou
-if curl -s http://localhost:3001/health > /dev/null 2>&1; then
+# Aguardar backend iniciar (máximo 30 segundos)
+echo -e "${YELLOW}   ⏳ Aguardando backend iniciar...${NC}"
+BACKEND_READY=false
+for i in {1..30}; do
+    if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+        BACKEND_READY=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$BACKEND_READY" = true ]; then
     echo -e "${GREEN}   ✅ Backend rodando!${NC}"
 else
-    echo -e "${YELLOW}   ⏳ Backend iniciando...${NC}"
+    echo -e "${RED}   ❌ Backend demorou para iniciar. Verifique /tmp/moneytrack-backend.log${NC}"
+    echo -e "${YELLOW}   Continuando mesmo assim...${NC}"
 fi
 
 # Iniciar Frontend
@@ -60,9 +70,23 @@ echo -e "${GREEN}🚀 Iniciando Frontend (porta 5173)...${NC}"
 cd "$PROJECT_DIR/frontend"
 npm run dev > /tmp/moneytrack-frontend.log 2>&1 &
 FRONTEND_PID=$!
-sleep 3
 
-echo -e "${GREEN}   ✅ Frontend rodando!${NC}"
+# Aguardar frontend iniciar (máximo 20 segundos)
+echo -e "${YELLOW}   ⏳ Aguardando frontend iniciar...${NC}"
+FRONTEND_READY=false
+for i in {1..20}; do
+    if curl -s http://localhost:5173 > /dev/null 2>&1; then
+        FRONTEND_READY=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$FRONTEND_READY" = true ]; then
+    echo -e "${GREEN}   ✅ Frontend rodando!${NC}"
+else
+    echo -e "${RED}   ❌ Frontend demorou para iniciar. Verifique /tmp/moneytrack-frontend.log${NC}"
+fi
 
 # Fazer backup inicial
 echo -e "${BLUE}📦 Fazendo backup inicial dos dados...${NC}"

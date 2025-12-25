@@ -137,19 +137,27 @@ function Dashboard() {
           setPatrimony(patrimonyRes.data)
           setHealthScore(healthRes.data)
           setCashflowForecast(cashflowRes.data)
+          setLoading(false)
         }
       } catch (error) {
         if (error.name !== 'AbortError' && isMounted) {
           console.error('Erro ao carregar dados:', error)
-          // Resetar para valores vazios em caso de erro para não mostrar dados antigos
-          setTransactionSummary({ income: 0, expenses: 0, balance: 0, accumulatedBalance: 0 })
-          setAnalytics(null)
-          setBudgetStatus(null)
+          // Se for erro de conexão, tentar novamente em 2 segundos
+          if (!error.response) {
+            console.log('Backend não disponível, tentando novamente em 2s...')
+            setTimeout(() => {
+              if (isMounted) fetchDataInternal()
+            }, 2000)
+          } else {
+            // Resetar para valores vazios em caso de erro para não mostrar dados antigos
+            setTransactionSummary({ income: 0, expenses: 0, balance: 0, accumulatedBalance: 0 })
+            setAnalytics(null)
+            setBudgetStatus(null)
+            setLoading(false)
+          }
         }
       } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
+        // Não faz nada aqui, o setLoading é controlado no try e catch
       }
     }
 

@@ -4,7 +4,36 @@ const Bill = require('../models/Bill')
 const Recurring = require('../models/Recurring')
 const Transaction = require('../models/Transaction')
 const RecurringPayment = require('../models/RecurringPayment')
+const RecurringOverride = require('../models/RecurringOverride')
 const { protect, validateObjectId } = require('../middleware/auth')
+
+// Função auxiliar para calcular urgência baseada na semana calendário
+// Semana útil: Segunda (1) a Domingo (0)
+function calculateUrgency(dueDate, isPaid) {
+  if (isPaid) return 'paid'
+
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+
+  const daysUntilDue = Math.ceil((dueDateStart - todayStart) / (1000 * 60 * 60 * 24))
+
+  if (daysUntilDue < 0) return 'overdue'
+  if (daysUntilDue === 0) return 'today'
+  if (daysUntilDue <= 3) return 'soon'
+
+  // Calcular fim da semana atual (próximo domingo)
+  const dayOfWeek = today.getDay() // 0 = domingo, 1 = segunda, etc.
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
+
+  // Se vence até o domingo desta semana = "Esta semana"
+  if (daysUntilDue <= daysUntilSunday) return 'upcoming'
+
+  // Próxima semana (segunda a domingo que vem)
+  if (daysUntilDue <= daysUntilSunday + 7) return 'next_week'
+
+  return 'normal'
+}
 
 // Todas as rotas precisam de autenticação
 router.use(protect)
@@ -56,6 +85,19 @@ router.get('/', async (req, res) => {
       year: currentYear
     })
 
+    // Buscar sobrescritas para este mês/ano
+    const overrides = await RecurringOverride.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    })
+
+    // Criar um Map com sobrescritas por recorrência
+    const overridesMap = new Map()
+    overrides.forEach(o => {
+      overridesMap.set(o.recurring.toString(), o)
+    })
+
     // Criar um Map com pagamentos por recorrência e dia
     const paidRecurringMap = new Map()
     payments.forEach(p => {
@@ -105,18 +147,8 @@ router.get('/', async (req, res) => {
             const paymentKey = `${r._id.toString()}_${currentDay}`
             const isPaidThisWeek = paidRecurringMap.has(paymentKey)
 
-            let urgency = 'normal'
-            if (isPaidThisWeek) {
-              urgency = 'paid'
-            } else if (daysUntilDue < 0) {
-              urgency = 'overdue'
-            } else if (daysUntilDue === 0) {
-              urgency = 'today'
-            } else if (daysUntilDue <= 3) {
-              urgency = 'soon'
-            } else if (daysUntilDue <= 7) {
-              urgency = 'upcoming'
-            }
+            // Usar função de urgência baseada na semana calendário
+            const urgency = calculateUrgency(dueDate, isPaidThisWeek)
 
             recurringBills.push({
               _id: `${r._id}_week${weekNumber}`,
@@ -167,24 +199,21 @@ router.get('/', async (req, res) => {
         // Verificar se foi pago usando a tabela RecurringPayment
         const isPaidThisMonth = paidRecurringMap.has(r._id.toString())
 
-        let urgency = 'normal'
-        if (isPaidThisMonth) {
-          urgency = 'paid'
-        } else if (daysUntilDue < 0) {
-          urgency = 'overdue'
-        } else if (daysUntilDue === 0) {
-          urgency = 'today'
-        } else if (daysUntilDue <= 3) {
-          urgency = 'soon'
-        } else if (daysUntilDue <= 7) {
-          urgency = 'upcoming'
-        }
+        // Verificar se há sobrescrita para este mês
+        const override = overridesMap.get(r._id.toString())
+        const finalAmount = override?.amount ?? r.amount
+        const finalName = override?.name ?? r.name
+
+        // Usar função de urgência baseada na semana calendário
+        const urgency = calculateUrgency(dueDate, isPaidThisMonth)
 
         recurringBills.push({
           _id: r._id,
-          name: r.isInstallment ? `${r.name} (${installmentForThisMonth}/${r.totalInstallments})` : r.name,
+          name: r.isInstallment ? `${finalName} (${installmentForThisMonth}/${r.totalInstallments})` : finalName,
           category: r.category,
-          amount: r.amount,
+          amount: finalAmount,
+          originalAmount: r.amount, // Guardar valor original para referência
+          hasOverride: !!override, // Indicar se tem sobrescrita
           dueDay: dueDay,
           isRecurring: true,
           isPaid: isPaidThisMonth,
@@ -287,11 +316,8 @@ router.get('/upcoming', async (req, res) => {
       // Verificar se foi pago usando a tabela RecurringPayment
       const isPaidThisMonth = paidRecurringIds.has(r._id.toString())
 
-      let urgency = 'normal'
-      if (daysUntilDue < 0) urgency = 'overdue'
-      else if (daysUntilDue === 0) urgency = 'today'
-      else if (daysUntilDue <= 3) urgency = 'soon'
-      else if (daysUntilDue <= 7) urgency = 'upcoming'
+      // Usar função de urgência baseada na semana calendário
+      const urgency = calculateUrgency(dueDate, isPaidThisMonth)
 
       return {
         _id: r._id,
@@ -468,7 +494,7 @@ router.post('/', async (req, res) => {
 })
 
 // @route   PUT /api/bills/:id
-// @desc    Atualizar conta
+// @desc    Atualizar conta (apenas para bills diretas, não recorrências)
 router.put('/:id', validateObjectId(), async (req, res) => {
   try {
     const bill = await Bill.findOne({ _id: req.params.id, user: req.user._id })
@@ -491,6 +517,84 @@ router.put('/:id', validateObjectId(), async (req, res) => {
     res.json({ bill })
   } catch (error) {
     res.status(400).json({ message: 'Erro ao atualizar conta', error: error.message })
+  }
+})
+
+// @route   PUT /api/bills/:id/override
+// @desc    Criar/atualizar sobrescrita de valor para um mês específico (apenas para recorrências)
+//          Isso permite alterar o valor de uma conta apenas para aquele mês, sem afetar outros meses
+router.put('/:id/override', validateObjectId(), async (req, res) => {
+  try {
+    const { month, year, amount, name, notes } = req.body
+
+    if (!month || !year) {
+      return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
+    }
+
+    // Verificar se a recorrência existe
+    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    // Criar ou atualizar a sobrescrita
+    const override = await RecurringOverride.findOneAndUpdate(
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year)
+      },
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year),
+        ...(amount !== undefined && { amount: parseFloat(amount) }),
+        ...(name !== undefined && { name }),
+        ...(notes !== undefined && { notes })
+      },
+      { upsert: true, new: true }
+    )
+
+    res.json({
+      message: 'Valor atualizado apenas para este mês',
+      override,
+      recurring: {
+        name: recurring.name,
+        originalAmount: recurring.amount
+      }
+    })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao criar sobrescrita', error: error.message })
+  }
+})
+
+// @route   DELETE /api/bills/:id/override
+// @desc    Remover sobrescrita e voltar ao valor original da recorrência
+router.delete('/:id/override', validateObjectId(), async (req, res) => {
+  try {
+    const { month, year } = req.body
+
+    if (!month || !year) {
+      return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
+    }
+
+    const result = await RecurringOverride.findOneAndDelete({
+      user: req.user._id,
+      recurring: req.params.id,
+      month: parseInt(month),
+      year: parseInt(year)
+    })
+
+    if (!result) {
+      return res.status(404).json({ message: 'Sobrescrita não encontrada' })
+    }
+
+    res.json({ message: 'Valor restaurado para o original da recorrência' })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao remover sobrescrita', error: error.message })
   }
 })
 

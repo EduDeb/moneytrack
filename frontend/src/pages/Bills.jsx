@@ -23,6 +23,7 @@ const urgencyColors = {
   today: { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', label: 'Vence hoje' },
   soon: { bg: '#fffbeb', border: '#f59e0b', text: '#d97706', label: 'Próximos 3 dias' },
   upcoming: { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a', label: 'Esta semana' },
+  next_week: { bg: '#eff6ff', border: '#3b82f6', text: '#2563eb', label: 'Próxima semana' },
   normal: { bg: '#f8fafc', border: '#e2e8f0', text: '#64748b', label: '' },
   paid: { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a', label: 'Paga' }
 }
@@ -142,14 +143,15 @@ function Bills() {
       if (editingBill) {
         // Usar endpoint correto baseado na origem do item
         if (editingBill.isFromRecurring) {
-          // Para recorrências, converter campos para o formato esperado pelo backend
-          const recurringData = {
-            name: form.name,
-            category: form.category,
+          // Para recorrências vindas de Contas a Pagar, criar override apenas para este mês
+          // Isso NÃO afeta os outros meses
+          const overrideData = {
+            month: selectedMonth,
+            year: selectedYear,
             amount: parseFloat(form.amount),
-            dayOfMonth: parseInt(form.dueDay)
+            name: form.name
           }
-          await api.put(`/recurring/${editingBill._id}`, recurringData)
+          await api.put(`/bills/${editingBill.recurringId || editingBill._id}/override`, overrideData)
         } else {
           await api.put(`/bills/${editingBill._id}`, form)
         }

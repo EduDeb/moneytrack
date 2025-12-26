@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
     const query = { user: req.user._id };
 
     if (type) query.type = type;
-    if (category) query.category = category;
+    if (category) query.category = { $regex: new RegExp(`^${category}$`, 'i') }; // Case-insensitive
 
     // Filtro por mês/ano específico
     if (month && year) {
@@ -101,14 +101,21 @@ router.get('/summary', async (req, res) => {
     // Saldo total acumulado (saldo anterior + saldo do mês atual)
     const accumulatedBalance = previousBalance + monthBalance;
 
-    // Categorias do mês
-    const byCategory = transactions.reduce((acc, t) => {
-      if (!acc[t.category]) {
-        acc[t.category] = 0;
+    // Categorias do mês (normalizadas - agrupa por nome case-insensitive)
+    const byCategoryRaw = transactions.reduce((acc, t) => {
+      // Normalizar: primeira letra maiúscula, resto minúsculo
+      const normalizedCategory = t.category.charAt(0).toUpperCase() + t.category.slice(1).toLowerCase();
+      if (!acc[normalizedCategory]) {
+        acc[normalizedCategory] = 0;
       }
-      acc[t.category] += t.amount;
+      acc[normalizedCategory] += t.amount;
       return acc;
     }, {});
+
+    // Ordenar por valor (maior para menor)
+    const byCategory = Object.fromEntries(
+      Object.entries(byCategoryRaw).sort(([,a], [,b]) => b - a)
+    );
 
     res.json({
       income,                    // Receitas do mês

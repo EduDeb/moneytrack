@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { capitalize } = require('../utils/stringHelper');
 
 const debtSchema = new mongoose.Schema({
   user: {
@@ -78,11 +79,41 @@ debtSchema.virtual('progress').get(function() {
   return ((this.totalAmount - this.remainingAmount) / this.totalAmount) * 100;
 });
 
+// Virtual para parcelas restantes
+debtSchema.virtual('remainingInstallments').get(function() {
+  return Math.max(0, this.installments - this.paidInstallments);
+});
+
+// Virtual para valor já pago
+debtSchema.virtual('paidAmount').get(function() {
+  return this.totalAmount - this.remainingAmount;
+});
+
+// Virtual para estimativa de término
+debtSchema.virtual('estimatedEndDate').get(function() {
+  if (this.status === 'paid' || this.remainingInstallments === 0) return null;
+  const today = new Date();
+  const monthsRemaining = this.remainingInstallments;
+  const endDate = new Date(today);
+  endDate.setMonth(endDate.getMonth() + monthsRemaining);
+  return endDate;
+});
+
 debtSchema.set('toJSON', { virtuals: true });
+debtSchema.set('toObject', { virtuals: true });
 
 // Índices para otimização de queries
 debtSchema.index({ user: 1 });
 debtSchema.index({ user: 1, status: 1 });
 debtSchema.index({ user: 1, type: 1 });
+
+// Capitalizar automaticamente nome e credor (usando setter no schema)
+debtSchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v;
+});
+
+debtSchema.path('creditor').set(function(v) {
+  return v ? capitalize(v) : v;
+});
 
 module.exports = mongoose.model('Debt', debtSchema);

@@ -2,10 +2,10 @@ const rateLimit = require('express-rate-limit')
 const helmet = require('helmet')
 const hpp = require('hpp')
 
-// Rate Limiter Geral - 1000 requests por 15 minutos (mais permissivo para desenvolvimento)
+// Rate Limiter Geral - 5000 requests por 15 minutos (mais permissivo para desenvolvimento)
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000,
+  max: 5000,
   message: {
     status: 429,
     message: 'Muitas requisições. Tente novamente em 15 minutos.',

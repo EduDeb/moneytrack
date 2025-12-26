@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { capitalize } = require('../utils/stringHelper')
 
 const categorySchema = new mongoose.Schema({
   user: {
@@ -38,5 +39,10 @@ const categorySchema = new mongoose.Schema({
 
 // Índice composto para garantir nome único por usuário e tipo
 categorySchema.index({ user: 1, name: 1, type: 1 }, { unique: true })
+
+// Capitalizar automaticamente nome (usando setter)
+categorySchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v
+})
 
 module.exports = mongoose.model('Category', categorySchema)

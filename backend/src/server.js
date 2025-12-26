@@ -85,20 +85,9 @@ app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/settings', require('./routes/settings'));
-app.use('/api/tags', require('./routes/tags'));
 app.use('/api/profile', require('./routes/profile'));
-app.use('/api/import', require('./routes/import'));
 
-// Gamificação
-app.use('/api/achievements', require('./routes/achievements'));
-
-// Segurança e Auditoria
-app.use('/api/audit', require('./routes/audit'));
-app.use('/api/2fa', require('./routes/twoFactor'));
-
-// Alertas e Projeções Inteligentes
-app.use('/api/alerts', require('./routes/alerts'));
-app.use('/api/projections', require('./routes/projections'));
+// Patrimônio (simplificado)
 app.use('/api/patrimony', require('./routes/patrimony'));
 
 // Rota de saúde (sem autenticação, para monitoramento)

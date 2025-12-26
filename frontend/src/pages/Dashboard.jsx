@@ -7,45 +7,34 @@ import {
   Wallet,
   PiggyBank,
   CreditCard,
-  AlertCircle,
   Calendar,
   Check,
   ChevronRight,
   ChevronLeft,
   ArrowUpRight,
   ArrowDownRight,
-  BarChart3,
   Target,
-  Activity,
   Shield,
-  Zap,
-  TrendingUp as TrendUp,
   Plus,
   Eye,
-  Settings,
-  ArrowRight
+  X,
+  ArrowLeft,
+  Loader
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
   Tooltip,
-  ResponsiveContainer,
-  Legend
+  ResponsiveContainer
 } from 'recharts'
 import { useAuth } from '../context/AuthContext'
 import OnboardingWizard from '../components/OnboardingWizard'
-import InfoTooltip from '../components/InfoTooltip'
-import TipCard from '../components/TipCard'
-import GuidedTour, { defaultDashboardSteps } from '../components/GuidedTour'
 import { useCategories } from '../contexts/CategoriesContext'
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+// Cores padrão para categorias não encontradas
+const DEFAULT_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16']
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -56,24 +45,21 @@ function Dashboard() {
   const navigate = useNavigate()
   const { colors, isDark } = useContext(ThemeContext)
   const { user } = useAuth()
-  const { categoryLabels, getCategoryLabel } = useCategories()
+  const { categoryLabels, getCategoryColor, getCategoryByValue, allCategories } = useCategories()
   const now = new Date()
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [dashboardData, setDashboardData] = useState(null)
   const [transactionSummary, setTransactionSummary] = useState(null)
-  const [investmentSummary, setInvestmentSummary] = useState(null)
-  const [debtSummary, setDebtSummary] = useState(null)
-  const [upcomingBills, setUpcomingBills] = useState([])
-  const [analytics, setAnalytics] = useState(null)
-  const [budgetStatus, setBudgetStatus] = useState(null)
-  const [patrimony, setPatrimony] = useState(null)
-  const [healthScore, setHealthScore] = useState(null)
-  const [cashflowForecast, setCashflowForecast] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [accountsCount, setAccountsCount] = useState(null)
-  const [showTour, setShowTour] = useState(false)
   const [payingBill, setPayingBill] = useState(null)
+
+  // Estados para drill-down de categoria
+  const [selectedCategory, setSelectedCategory] = useState(null)
+  const [categoryTransactions, setCategoryTransactions] = useState([])
+  const [loadingCategory, setLoadingCategory] = useState(false)
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
 
   const isCurrentMonth = selectedMonth === (now.getMonth() + 1) && selectedYear === now.getFullYear()
 
@@ -104,74 +90,47 @@ function Dashboard() {
     let isMounted = true
     const abortController = new AbortController()
 
-    // Resetar dados do mês quando mudar de mês para evitar mostrar dados antigos
     setLoading(true)
-    setTransactionSummary(null)
-    setAnalytics(null)
-    setBudgetStatus(null)
 
-    const fetchDataInternal = async () => {
+    const fetchData = async () => {
       try {
         const params = `?month=${selectedMonth}&year=${selectedYear}`
         const config = { signal: abortController.signal }
 
-        const [transRes, invRes, debtRes, billsRes, analyticsRes, budgetRes, patrimonyRes, healthRes, cashflowRes] = await Promise.all([
-          api.get(`/transactions/summary${params}`, config),
-          api.get('/investments/summary', config),
-          api.get('/debts/summary', config),
-          api.get('/bills/upcoming', config),
-          api.get(`/transactions/analytics${params}`, config),
-          api.get(`/budget/status${params}`, config),
-          api.get('/patrimony/summary', config),
-          api.get('/patrimony/health-score', config),
-          api.get('/patrimony/cashflow-forecast', config)
+        // Apenas 2 chamadas: dashboard unificado + transações do mês
+        const [dashboardRes, transRes] = await Promise.all([
+          api.get('/patrimony/dashboard', config),
+          api.get(`/transactions/summary${params}`, config)
         ])
 
         if (isMounted) {
+          setDashboardData(dashboardRes.data)
           setTransactionSummary(transRes.data)
-          setInvestmentSummary(invRes.data)
-          setDebtSummary(debtRes.data)
-          setUpcomingBills(billsRes.data.bills || [])
-          setAnalytics(analyticsRes.data)
-          setBudgetStatus(budgetRes.data)
-          setPatrimony(patrimonyRes.data)
-          setHealthScore(healthRes.data)
-          setCashflowForecast(cashflowRes.data)
           setLoading(false)
         }
       } catch (error) {
         if (error.name !== 'AbortError' && isMounted) {
           console.error('Erro ao carregar dados:', error)
-          // Se for erro de conexão, tentar novamente em 2 segundos
           if (!error.response) {
-            console.log('Backend não disponível, tentando novamente em 2s...')
             setTimeout(() => {
-              if (isMounted) fetchDataInternal()
+              if (isMounted) fetchData()
             }, 2000)
           } else {
-            // Resetar para valores vazios em caso de erro para não mostrar dados antigos
             setTransactionSummary({ income: 0, expenses: 0, balance: 0, accumulatedBalance: 0 })
-            setAnalytics(null)
-            setBudgetStatus(null)
             setLoading(false)
           }
         }
-      } finally {
-        // Não faz nada aqui, o setLoading é controlado no try e catch
       }
     }
 
-    const checkOnboardingInternal = async () => {
+    const checkOnboarding = async () => {
       const onboardingCompleted = localStorage.getItem('onboardingCompleted')
       if (onboardingCompleted) return
 
       try {
         const res = await api.get('/accounts', { signal: abortController.signal })
-        if (isMounted) {
-          setAccountsCount(res.data.length)
-          if (res.data.length === 0) {
-            setShowOnboarding(true)
-          }
+        if (isMounted && res.data.length === 0) {
+          setShowOnboarding(true)
         }
       } catch (error) {
         if (error.name !== 'AbortError') {
@@ -180,12 +139,11 @@ function Dashboard() {
       }
     }
 
-    fetchDataInternal()
-    checkOnboardingInternal()
+    fetchData()
+    checkOnboarding()
 
-    // Listener para atualizar quando adicionar transação pelo botão rápido
     const handleTransactionAdded = () => {
-      if (isMounted) fetchDataInternal()
+      if (isMounted) fetchData()
     }
     window.addEventListener('transaction-added', handleTransactionAdded)
 
@@ -196,106 +154,9 @@ function Dashboard() {
     }
   }, [selectedMonth, selectedYear])
 
-  useEffect(() => {
-    const tourCompleted = localStorage.getItem('guidedTour_completed')
-    const onboardingDone = localStorage.getItem('onboardingCompleted')
-    if (onboardingDone && !tourCompleted) {
-      setTimeout(() => setShowTour(true), 1000)
-    }
-  }, [])
-
-  // Função externa para recarregar dados (usada em callbacks)
-  const fetchData = async () => {
-    try {
-      const params = `?month=${selectedMonth}&year=${selectedYear}`
-      const [transRes, invRes, debtRes, billsRes, analyticsRes, budgetRes, patrimonyRes, healthRes, cashflowRes] = await Promise.all([
-        api.get(`/transactions/summary${params}`),
-        api.get('/investments/summary'),
-        api.get('/debts/summary'),
-        api.get('/bills/upcoming'),
-        api.get(`/transactions/analytics${params}`),
-        api.get(`/budget/status${params}`),
-        api.get('/patrimony/summary'),
-        api.get('/patrimony/health-score'),
-        api.get('/patrimony/cashflow-forecast')
-      ])
-
-      setTransactionSummary(transRes.data)
-      setInvestmentSummary(invRes.data)
-      setDebtSummary(debtRes.data)
-      setUpcomingBills(billsRes.data.bills || [])
-      setAnalytics(analyticsRes.data)
-      setBudgetStatus(budgetRes.data)
-      setPatrimony(patrimonyRes.data)
-      setHealthScore(healthRes.data)
-      setCashflowForecast(cashflowRes.data)
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleOnboardingComplete = () => {
     setShowOnboarding(false)
-    fetchData()
-  }
-
-  // Mapeamento de ações para os fatores de saúde financeira
-  const getFactorAction = (factorName, status) => {
-    const actions = {
-      'Reserva de emergência': {
-        route: '/accounts',
-        label: 'Adicionar Reserva',
-        icon: Plus,
-        show: status !== 'excellent'
-      },
-      'Orçamentos': {
-        route: '/budget',
-        label: 'Ver Orçamentos',
-        icon: Eye,
-        show: status !== 'excellent'
-      },
-      'Endividamento': {
-        route: '/debts',
-        label: 'Ver Dívidas',
-        icon: Eye,
-        show: status === 'critical' || status === 'warning'
-      },
-      'Contas em dia': {
-        route: '/bills',
-        label: 'Ver Contas',
-        icon: Eye,
-        show: status !== 'excellent'
-      },
-      'Planejamento': {
-        route: '/goals',
-        label: 'Criar Meta',
-        icon: Plus,
-        show: status !== 'excellent'
-      },
-      'Diversificação': {
-        route: '/investments',
-        label: 'Ver Investimentos',
-        icon: Eye,
-        show: status !== 'excellent'
-      }
-    }
-    return actions[factorName] || null
-  }
-
-  // Estilo do botão de ação
-  const actionButtonStyle = {
-    padding: '6px 12px',
-    borderRadius: '6px',
-    border: 'none',
-    fontSize: '12px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    transition: 'all 0.2s'
+    window.location.reload()
   }
 
   const handlePayBill = async (bill) => {
@@ -304,32 +165,25 @@ function Dashboard() {
 
     setPayingBill(bill._id)
     try {
-      // Usar o mês/ano atual para pagamento no Dashboard
       const now = new Date()
       await api.post(`/bills/${bill._id}/pay`, {
         isFromRecurring: bill.isFromRecurring || false,
         month: now.getMonth() + 1,
         year: now.getFullYear()
       })
-      fetchData()
+      window.location.reload()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
-      alert(error.response?.data?.message || 'Erro ao pagar conta. Tente novamente.')
+      alert(error.response?.data?.message || 'Erro ao pagar conta')
     } finally {
       setPayingBill(null)
     }
   }
 
-  const getUrgencyStyle = (urgency) => {
-    switch (urgency) {
-      case 'overdue':
-      case 'today':
-        return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626' }
-      case 'soon':
-        return { bg: '#fffbeb', border: '#f59e0b', text: '#d97706' }
-      default:
-        return { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a' }
-    }
+  const getUrgencyStyle = (daysUntilDue) => {
+    if (daysUntilDue < 0) return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626' }
+    if (daysUntilDue <= 3) return { bg: '#fffbeb', border: '#f59e0b', text: '#d97706' }
+    return { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a' }
   }
 
   const formatCurrency = (value) => {
@@ -339,16 +193,73 @@ function Dashboard() {
     }).format(value || 0)
   }
 
+  // Função para abrir o drill-down de categoria
+  const handleCategoryClick = async (categoryData) => {
+    setSelectedCategory(categoryData)
+    setShowCategoryModal(true)
+    setLoadingCategory(true)
+
+    try {
+      // Buscar transações do mês filtradas por categoria
+      const response = await api.get(`/transactions?month=${selectedMonth}&year=${selectedYear}&category=${categoryData.originalCategory}&type=expense&limit=100`)
+      setCategoryTransactions(response.data.transactions || [])
+    } catch (error) {
+      console.error('Erro ao buscar transações da categoria:', error)
+      setCategoryTransactions([])
+    } finally {
+      setLoadingCategory(false)
+    }
+  }
+
+  // Fechar modal de categoria
+  const closeCategoryModal = () => {
+    setShowCategoryModal(false)
+    setSelectedCategory(null)
+    setCategoryTransactions([])
+  }
+
+  // Formatar data
+  const formatDate = (dateString) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  }
+
+  // Função para buscar cor da categoria (case-insensitive)
+  const findCategoryColor = (categoryName, index) => {
+    // Tenta encontrar a categoria pelo nome (case-insensitive)
+    const cat = allCategories.find(c =>
+      c.name.toLowerCase() === categoryName.toLowerCase() ||
+      c.value.toLowerCase() === categoryName.toLowerCase() ||
+      c.label?.toLowerCase() === categoryName.toLowerCase()
+    )
+    if (cat?.color) return cat.color
+
+    // Se não encontrou, usa cor padrão pelo índice
+    return DEFAULT_COLORS[index % DEFAULT_COLORS.length]
+  }
+
   const getExpenseChartData = () => {
     if (!transactionSummary?.byCategory) return []
 
-    return Object.entries(transactionSummary.byCategory)
-      .filter(([category]) => category.includes('despesa') ||
-        ['alimentacao', 'transporte', 'moradia', 'saude', 'educacao', 'lazer', 'compras', 'contas'].includes(category))
-      .map(([category, amount]) => ({
-        name: categoryLabels[category] || category,
-        value: amount
-      }))
+    // Filtrar apenas despesas (excluir receitas)
+    const expenseCategories = Object.entries(transactionSummary.byCategory)
+      .filter(([category]) => {
+        const lowerCat = category.toLowerCase()
+        // Excluir categorias de receita
+        return !lowerCat.includes('receita') && lowerCat !== 'salario' && lowerCat !== 'salário' && !lowerCat.includes('freelance') && !lowerCat.includes('investimento')
+      })
+      .slice(0, 8)
+
+    // Calcular total para percentuais
+    const total = expenseCategories.reduce((sum, [, amount]) => sum + amount, 0)
+
+    return expenseCategories.map(([category, amount], index) => ({
+      name: categoryLabels[category.toLowerCase()] || categoryLabels[category] || category,
+      originalCategory: category, // Guardar categoria original para busca
+      value: amount,
+      color: findCategoryColor(category, index),
+      percentage: total > 0 ? ((amount / total) * 100).toFixed(1) : 0
+    }))
   }
 
   if (loading) {
@@ -359,9 +270,10 @@ function Dashboard() {
     )
   }
 
+  const { summary, health, upcomingBills, topCategories, budgets, goals, accounts } = dashboardData || {}
+
   return (
     <div>
-      {/* Onboarding Wizard para novos usuários */}
       {showOnboarding && (
         <OnboardingWizard
           onComplete={handleOnboardingComplete}
@@ -392,7 +304,6 @@ function Dashboard() {
         }}>
           <button
             onClick={goToPreviousMonth}
-            aria-label="Mês anterior"
             style={{
               padding: '6px',
               borderRadius: '8px',
@@ -406,11 +317,7 @@ function Dashboard() {
             <ChevronLeft size={20} color={colors.textSecondary} />
           </button>
 
-          <div style={{
-            minWidth: '140px',
-            textAlign: 'center',
-            padding: '0 8px'
-          }}>
+          <div style={{ minWidth: '140px', textAlign: 'center', padding: '0 8px' }}>
             <span style={{ fontWeight: '600', color: colors.text }}>
               {MONTH_NAMES[selectedMonth - 1]}
             </span>
@@ -421,7 +328,6 @@ function Dashboard() {
 
           <button
             onClick={goToNextMonth}
-            aria-label="Próximo mês"
             style={{
               padding: '6px',
               borderRadius: '8px',
@@ -438,7 +344,6 @@ function Dashboard() {
           {!isCurrentMonth && (
             <button
               onClick={goToCurrentMonth}
-              aria-label="Ir para o mês atual"
               style={{
                 marginLeft: '8px',
                 padding: '6px 12px',
@@ -457,816 +362,204 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Cards de Resumo */}
+      {/* Cards de Resumo do Mês */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '24px'
-      }} data-tour="summary-cards">
-        <div className="card" style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="text-sm text-gray-500">Receitas (mês)</p>
-              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      }}>
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p className="text-sm text-gray-500">Receitas</p>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#16a34a' }}>
                 {formatCurrency(transactionSummary?.income)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
-              <TrendingUp className="text-green-600" size={24} />
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+              <TrendingUp className="text-green-600" size={20} />
             </div>
           </div>
         </div>
 
-        <div className="card" style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="text-sm text-gray-500">Despesas (mês)</p>
-              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p className="text-sm text-gray-500">Despesas</p>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: '#dc2626' }}>
                 {formatCurrency(transactionSummary?.expenses)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
-              <TrendingDown className="text-red-600" size={24} />
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+              <TrendingDown className="text-red-600" size={20} />
             </div>
           </div>
         </div>
 
-        <div className="card" style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="text-sm text-gray-500">Saldo (mês)</p>
-              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.balance || 0) >= 0 ? '#2563eb' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p className="text-sm text-gray-500">Saldo do Mês</p>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.balance || 0) >= 0 ? '#2563eb' : '#dc2626' }}>
                 {formatCurrency(transactionSummary?.balance)}
               </p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center" style={{ flexShrink: 0 }}>
-              <Wallet className="text-blue-600" size={24} />
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+              <Wallet className="text-blue-600" size={20} />
             </div>
           </div>
         </div>
 
-        {/* Saldo Acumulado - Soma de todas as transações */}
         <div className="card" style={{
           border: `2px solid ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? '#22c55e' : '#ef4444'}`,
           background: (transactionSummary?.accumulatedBalance || 0) >= 0
             ? (isDark ? 'rgba(34, 197, 94, 0.1)' : '#f0fdf4')
-            : (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2'),
-          minWidth: 0
+            : (isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2')
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="text-sm" style={{ color: colors.textSecondary, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p className="text-sm" style={{ color: colors.textSecondary, fontWeight: '600' }}>
                 Saldo Acumulado
-                <InfoTooltip position="right">
-                  Soma de todas as receitas menos despesas desde o início. Funciona como o saldo de uma conta corrente.
-                </InfoTooltip>
               </p>
-              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.accumulatedBalance || 0) >= 0 ? '#16a34a' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <p style={{ fontSize: '1.25rem', fontWeight: '700', color: (transactionSummary?.accumulatedBalance || 0) >= 0 ? '#16a34a' : '#dc2626' }}>
                 {formatCurrency(transactionSummary?.accumulatedBalance)}
               </p>
-              {transactionSummary?.previousBalance !== 0 && transactionSummary?.previousBalance !== undefined && (
-                <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Meses anteriores: {formatCurrency(transactionSummary?.previousBalance)}
-                </p>
-              )}
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'bg-green-100' : 'bg-red-100'}`} style={{ flexShrink: 0 }}>
-              <PiggyBank className={(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'} size={24} />
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+              <PiggyBank className={(transactionSummary?.accumulatedBalance || 0) >= 0 ? 'text-green-600' : 'text-red-600'} size={20} />
             </div>
           </div>
         </div>
       </div>
 
       {/* Patrimônio e Saúde Financeira */}
-      {(patrimony || healthScore) && (
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '16px',
+        marginBottom: '24px'
+      }}>
+        {/* Card Patrimônio Líquido */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '16px',
-          marginBottom: '24px'
+          background: `linear-gradient(135deg, ${isDark ? '#1e3a5f' : '#1e40af'} 0%, ${isDark ? '#0f172a' : '#3b82f6'} 100%)`,
+          borderRadius: '16px',
+          padding: '24px',
+          color: 'white'
         }}>
-          {/* Card Patrimônio Líquido */}
-          {patrimony && (
-            <div data-tour="net-worth" style={{
-              background: `linear-gradient(135deg, ${isDark ? '#1e3a5f' : '#1e40af'} 0%, ${isDark ? '#0f172a' : '#3b82f6'} 100%)`,
-              borderRadius: '16px',
-              padding: '24px',
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                position: 'absolute',
-                right: '-20px',
-                top: '-20px',
-                width: '120px',
-                height: '120px',
-                background: 'rgba(255,255,255,0.1)',
-                borderRadius: '50%'
-              }} />
-              <div style={{ position: 'relative', zIndex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <Wallet size={20} style={{ opacity: 0.9 }} />
-                  <span style={{ fontSize: '14px', opacity: 0.9 }}>Patrimônio Líquido</span>
-                  <InfoTooltip term="Patrimônio Líquido" />
-                </div>
-                <p style={{ fontSize: '32px', fontWeight: '700', marginBottom: '4px' }}>
-                  {formatCurrency(patrimony.netWorth)}
-                </p>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '13px',
-                  opacity: 0.9
-                }}>
-                  {patrimony.monthBalance >= 0 ? (
-                    <>
-                      <ArrowUpRight size={16} />
-                      <span>+{formatCurrency(patrimony.monthBalance)} este mês</span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDownRight size={16} />
-                      <span>{formatCurrency(patrimony.monthBalance)} este mês</span>
-                    </>
-                  )}
-                </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 1fr',
-                  gap: '12px',
-                  marginTop: '20px',
-                  paddingTop: '16px',
-                  borderTop: '1px solid rgba(255,255,255,0.2)'
-                }}>
-                  <div>
-                    <p style={{ fontSize: '11px', opacity: 0.7 }}>Contas</p>
-                    <p style={{ fontSize: '14px', fontWeight: '600' }}>{formatCurrency(patrimony.accountsTotal)}</p>
-                    {patrimony.accountsTotal === 0 && (
-                      <button
-                        onClick={() => navigate('/accounts')}
-                        style={{
-                          marginTop: '6px',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          color: 'white',
-                          fontSize: '10px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Plus size={12} /> Adicionar
-                      </button>
-                    )}
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '11px', opacity: 0.7 }}>Investimentos</p>
-                    <p style={{ fontSize: '14px', fontWeight: '600' }}>{formatCurrency(patrimony.investmentsTotal)}</p>
-                    {patrimony.investmentsTotal === 0 && (
-                      <button
-                        onClick={() => navigate('/investments')}
-                        style={{
-                          marginTop: '6px',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          color: 'white',
-                          fontSize: '10px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Plus size={12} /> Adicionar
-                      </button>
-                    )}
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '11px', opacity: 0.7 }}>Dívidas</p>
-                    <p style={{ fontSize: '14px', fontWeight: '600' }}>-{formatCurrency(patrimony.debtsTotal)}</p>
-                    {patrimony.debtsTotal > 0 && (
-                      <button
-                        onClick={() => navigate('/debts')}
-                        style={{
-                          marginTop: '6px',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          color: 'white',
-                          fontSize: '10px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Eye size={12} /> Gerenciar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Card Saúde Financeira */}
-          {healthScore && (
-            <div data-tour="financial-health" style={{
-              backgroundColor: colors.backgroundCard,
-              borderRadius: '16px',
-              padding: '24px',
-              border: `1px solid ${colors.border}`,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                <Shield size={20} color={
-                  healthScore.level === 'excellent' ? '#22c55e' :
-                  healthScore.level === 'good' ? '#3b82f6' :
-                  healthScore.level === 'warning' ? '#f59e0b' : '#ef4444'
-                } />
-                <span style={{ fontSize: '14px', color: colors.textSecondary }}>Saúde Financeira</span>
-                <InfoTooltip position="right">
-                  Mede a qualidade das suas finanças com base em diversos fatores: reserva de emergência, nível de endividamento, orçamentos e metas. Quanto maior o score, mais saudável está sua vida financeira.
-                </InfoTooltip>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-                <div style={{
-                  width: '80px',
-                  height: '80px',
-                  borderRadius: '50%',
-                  background: `conic-gradient(${
-                    healthScore.level === 'excellent' ? '#22c55e' :
-                    healthScore.level === 'good' ? '#3b82f6' :
-                    healthScore.level === 'warning' ? '#f59e0b' : '#ef4444'
-                  } ${healthScore.score * 3.6}deg, ${isDark ? '#374151' : '#e5e7eb'} 0deg)`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative'
-                }}>
-                  <div style={{
-                    width: '64px',
-                    height: '64px',
-                    borderRadius: '50%',
-                    backgroundColor: colors.backgroundCard,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <span style={{
-                      fontSize: '20px',
-                      fontWeight: '700',
-                      color: healthScore.level === 'excellent' ? '#22c55e' :
-                        healthScore.level === 'good' ? '#3b82f6' :
-                        healthScore.level === 'warning' ? '#f59e0b' : '#ef4444'
-                    }}>
-                      {healthScore.score}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    color: colors.text,
-                    marginBottom: '4px'
-                  }}>
-                    {healthScore.level === 'excellent' ? 'Excelente!' :
-                     healthScore.level === 'good' ? 'Bom' :
-                     healthScore.level === 'warning' ? 'Atenção' : 'Crítico'}
-                  </p>
-                  <p style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '1.4' }}>
-                    {healthScore.message}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {healthScore.factors?.slice(0, 4).map((factor, i) => {
-                  const action = getFactorAction(factor.name, factor.status)
-                  const ActionIcon = action?.icon || ArrowRight
-                  return (
-                    <div key={i} style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? colors.border : '#f9fafb'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        gap: '4px'
-                      }}>
-                        <span style={{ fontSize: '13px', color: colors.text, fontWeight: '500' }}>{factor.name}</span>
-                        <span style={{
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          backgroundColor: factor.status === 'excellent' ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7') :
-                            factor.status === 'good' ? (isDark ? 'rgba(59,130,246,0.2)' : '#dbeafe') :
-                            factor.status === 'warning' ? (isDark ? 'rgba(245,158,11,0.2)' : '#fef3c7') :
-                            (isDark ? 'rgba(239,68,68,0.2)' : '#fee2e2'),
-                          color: factor.status === 'excellent' ? '#22c55e' :
-                            factor.status === 'good' ? '#3b82f6' :
-                            factor.status === 'warning' ? '#f59e0b' : '#ef4444'
-                        }}>
-                          {factor.detail}
-                        </span>
-                      </div>
-                      {action && action.show && (
-                        <button
-                          onClick={() => navigate(action.route)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: 'none',
-                            backgroundColor: factor.status === 'critical' ? '#ef4444' :
-                              factor.status === 'warning' ? '#f59e0b' : colors.primary,
-                            color: 'white',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '4px',
-                            width: '100%'
-                          }}
-                        >
-                          <ActionIcon size={12} />
-                          {action.label}
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TipCards baseados nos dados */}
-      {(healthScore?.score < 60 || (patrimony && patrimony.debtsTotal > patrimony.accountsTotal)) && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          {healthScore && healthScore.score < 60 && (
-            <TipCard
-              type="warning"
-              title="Sua saúde financeira precisa de atenção"
-              actionLabel="Ver como melhorar"
-              onAction={() => navigate('/goals')}
-            >
-              Seu score está em {healthScore.score}. Comece criando uma reserva de emergência.
-            </TipCard>
-          )}
-
-          {patrimony && patrimony.debtsTotal > patrimony.accountsTotal && (
-            <TipCard
-              type="danger"
-              title="Dívidas maiores que saldo"
-              actionLabel="Ver dívidas"
-              onAction={() => navigate('/debts')}
-            >
-              Suas dívidas ({formatCurrency(patrimony.debtsTotal)}) superam seu saldo em contas. Priorize quitar as de juros mais altos.
-            </TipCard>
-          )}
-        </div>
-      )}
-
-      {/* Previsão de Fluxo de Caixa */}
-      {cashflowForecast && cashflowForecast.alerts?.length > 0 && (
-        <div style={{
-          backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#fef2f2',
-          borderRadius: '12px',
-          padding: '16px',
-          marginBottom: '24px',
-          border: '1px solid #ef4444'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
-            <Zap size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ flex: 1 }}>
-              <p style={{ fontWeight: '600', color: '#ef4444', marginBottom: '4px' }}>Alerta de Fluxo de Caixa</p>
-              {cashflowForecast.alerts.map((alert, i) => (
-                <p key={i} style={{ fontSize: '13px', color: colors.text, lineHeight: '1.4' }}>{alert.message}</p>
-              ))}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <Wallet size={20} style={{ opacity: 0.9 }} />
+            <span style={{ fontSize: '14px', opacity: 0.9 }}>Patrimônio Líquido</span>
+          </div>
+          <p style={{ fontSize: '28px', fontWeight: '700', marginBottom: '4px' }}>
+            {formatCurrency(summary?.netWorth)}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', opacity: 0.9 }}>
+            {(summary?.monthBalance || 0) >= 0 ? (
+              <>
+                <ArrowUpRight size={16} />
+                <span>+{formatCurrency(summary?.monthBalance)} este mês</span>
+              </>
+            ) : (
+              <>
+                <ArrowDownRight size={16} />
+                <span>{formatCurrency(summary?.monthBalance)} este mês</span>
+              </>
+            )}
           </div>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '8px',
-            marginTop: '8px'
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: '12px',
+            marginTop: '20px',
+            paddingTop: '16px',
+            borderTop: '1px solid rgba(255,255,255,0.2)'
           }}>
-            <button
-              onClick={() => navigate('/transactions')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: '#22c55e',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Plus size={14} />
-              Adicionar Receita
-            </button>
-            <button
-              onClick={() => navigate('/recurring')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: `1px solid ${colors.border}`,
-                backgroundColor: colors.backgroundCard,
-                color: colors.text,
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Eye size={14} />
-              Ver Recorrências
-            </button>
-            <button
-              onClick={() => navigate('/bills')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: `1px solid ${colors.border}`,
-                backgroundColor: colors.backgroundCard,
-                color: colors.text,
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Calendar size={14} />
-              Ver Contas
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Segunda linha de cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="card">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Total Investido</p>
-            <PiggyBank className="text-gray-400" size={18} />
-          </div>
-          <p className="text-xl font-bold">{formatCurrency(investmentSummary?.totalInvested)}</p>
-          {(investmentSummary?.totalInvested || 0) > 0 ? (
-            <p className={`text-sm mt-1 ${(investmentSummary?.profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {(investmentSummary?.profit || 0) >= 0 ? '+' : ''}{formatCurrency(investmentSummary?.profit)}
-              {' '}({(investmentSummary?.profitPercentage || 0).toFixed(2)}%)
-            </p>
-          ) : (
-            <button
-              onClick={() => navigate('/investments')}
-              style={{
-                marginTop: '8px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: '#8b5cf6',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Plus size={14} />
-              Começar a Investir
-            </button>
-          )}
-        </div>
-
-        <div className="card">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Total em Dívidas</p>
-            <CreditCard className="text-gray-400" size={18} />
-          </div>
-          <p className="text-xl font-bold text-red-600">{formatCurrency(debtSummary?.totalDebt)}</p>
-          {(debtSummary?.totalDebt || 0) > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-              <p className="text-sm text-gray-500">
-                {debtSummary?.activeCount || 0} dívidas ativas
-              </p>
-              <button
-                onClick={() => navigate('/debts')}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  fontSize: '10px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
-              >
-                <Eye size={10} />
-                Gerenciar
-              </button>
+            <div>
+              <p style={{ fontSize: '11px', opacity: 0.7 }}>Contas</p>
+              <p style={{ fontSize: '14px', fontWeight: '600' }}>{formatCurrency(summary?.accountsTotal)}</p>
             </div>
-          ) : (
-            <p className="text-sm text-green-600 mt-1">
-              Parabéns! Sem dívidas
-            </p>
-          )}
+            <div>
+              <p style={{ fontSize: '11px', opacity: 0.7 }}>Investimentos</p>
+              <p style={{ fontSize: '14px', fontWeight: '600' }}>{formatCurrency(summary?.investmentsTotal)}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '11px', opacity: 0.7 }}>Dívidas</p>
+              <p style={{ fontSize: '14px', fontWeight: '600' }}>-{formatCurrency(summary?.debtsTotal)}</p>
+            </div>
+          </div>
         </div>
 
-        <div className="card">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-500">Parcelas do Mês</p>
-            <AlertCircle className="text-gray-400" size={18} />
+        {/* Card Saúde Financeira - Simplificado */}
+        <div style={{
+          backgroundColor: colors.backgroundCard,
+          borderRadius: '16px',
+          padding: '24px',
+          border: `1px solid ${colors.border}`,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <Shield size={20} color={
+              health?.level === 'excellent' ? '#22c55e' :
+              health?.level === 'good' ? '#3b82f6' :
+              health?.level === 'warning' ? '#f59e0b' : '#ef4444'
+            } />
+            <span style={{ fontSize: '14px', color: colors.textSecondary }}>Saúde Financeira</span>
           </div>
-          <p className="text-xl font-bold text-orange-600">{formatCurrency(debtSummary?.monthlyPayment)}</p>
-          {(debtSummary?.monthlyPayment || 0) > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-              <p className="text-sm text-gray-500">a pagar este mês</p>
-              <button
-                onClick={() => navigate('/debts')}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: '#f59e0b',
-                  color: 'white',
-                  fontSize: '10px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
-              >
-                <Eye size={10} />
-                Ver
-              </button>
+
+          <div style={{
+            width: '100px',
+            height: '100px',
+            borderRadius: '50%',
+            background: `conic-gradient(${
+              health?.level === 'excellent' ? '#22c55e' :
+              health?.level === 'good' ? '#3b82f6' :
+              health?.level === 'warning' ? '#f59e0b' : '#ef4444'
+            } ${(health?.score || 0) * 3.6}deg, ${isDark ? '#374151' : '#e5e7eb'} 0deg)`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              backgroundColor: colors.backgroundCard,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <span style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                color: health?.level === 'excellent' ? '#22c55e' :
+                  health?.level === 'good' ? '#3b82f6' :
+                  health?.level === 'warning' ? '#f59e0b' : '#ef4444'
+              }}>
+                {health?.score || 0}
+              </span>
             </div>
-          ) : (
-            <p className="text-sm text-gray-500 mt-1">
-              Nenhuma parcela pendente
-            </p>
-          )}
+          </div>
+
+          <p style={{
+            fontSize: '16px',
+            fontWeight: '600',
+            color: colors.text,
+            marginTop: '16px'
+          }}>
+            {health?.level === 'excellent' ? 'Excelente!' :
+             health?.level === 'good' ? 'Bom' :
+             health?.level === 'warning' ? 'Atenção' : 'Crítico'}
+          </p>
         </div>
       </div>
 
-      {/* Análise de Gastos */}
-      {analytics && (analytics.top5Categories?.length > 0 || analytics.dailyAverage > 0) && (
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <BarChart3 size={18} color="#8b5cf6" />
-            <h3 style={{ fontWeight: '600', color: colors.text }}>Análise de Gastos</h3>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-            {/* Card Comparativo Mensal */}
-            <div style={{
-              backgroundColor: colors.backgroundCard,
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-              border: `1px solid ${colors.border}`
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                <div>
-                  <p style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '4px' }}>Gastos este mês</p>
-                  <p style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>
-                    {formatCurrency(analytics.currentMonth?.total || 0)}
-                  </p>
-                </div>
-                {analytics.monthlyChange !== null && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    backgroundColor: parseFloat(analytics.monthlyChange) > 0 ? (isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2') : (isDark ? 'rgba(34,197,94,0.2)' : '#f0fdf4'),
-                    color: parseFloat(analytics.monthlyChange) > 0 ? '#dc2626' : '#16a34a'
-                  }}>
-                    {parseFloat(analytics.monthlyChange) > 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-                    <span style={{ fontSize: '13px', fontWeight: '600' }}>
-                      {Math.abs(parseFloat(analytics.monthlyChange))}%
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '12px', borderTop: `1px solid ${colors.border}` }}>
-                <div>
-                  <p style={{ fontSize: '11px', color: colors.textSecondary }}>Mês anterior</p>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>
-                    {formatCurrency(analytics.lastMonth?.total || 0)}
-                  </p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: '11px', color: colors.textSecondary }}>Média/dia</p>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: colors.textSecondary }}>
-                    {formatCurrency(analytics.dailyAverage || 0)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Card Top 5 Categorias */}
-            <div style={{
-              backgroundColor: colors.backgroundCard,
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-              border: `1px solid ${colors.border}`
-            }}>
-              <p style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '12px' }}>Top 5 Gastos do Mês</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {analytics.top5Categories?.map((cat, index) => {
-                  const maxAmount = analytics.top5Categories[0]?.amount || 1
-                  const percentage = (cat.amount / maxAmount) * 100
-                  const barColors = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e']
-
-                  return (
-                    <div key={cat.category}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '13px', color: colors.text }}>
-                          {categoryLabels[cat.category] || cat.category}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: colors.text }}>
-                            {formatCurrency(cat.amount)}
-                          </span>
-                          {cat.change !== null && (
-                            <span style={{
-                              fontSize: '10px',
-                              color: parseFloat(cat.change) > 0 ? '#dc2626' : '#16a34a'
-                            }}>
-                              {parseFloat(cat.change) > 0 ? '+' : ''}{cat.change}%
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{
-                        height: '6px',
-                        backgroundColor: isDark ? colors.border : '#f3f4f6',
-                        borderRadius: '3px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${percentage}%`,
-                          backgroundColor: barColors[index] || '#6b7280',
-                          borderRadius: '3px',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                    </div>
-                  )
-                })}
-                {(!analytics.top5Categories || analytics.top5Categories.length === 0) && (
-                  <p style={{ fontSize: '13px', color: colors.textSecondary, textAlign: 'center', padding: '20px 0' }}>
-                    Nenhum gasto registrado
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Orçamento Mensal */}
-      {budgetStatus && budgetStatus.budgets?.length > 0 && (
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontWeight: '600', color: colors.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Target size={18} color="#3b82f6" />
-              Orçamento do Mês
-            </h3>
-            <button
-              onClick={() => navigate('/budget')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '13px',
-                color: colors.primary,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              Gerenciar <ChevronRight size={16} />
-            </button>
-          </div>
-
-          {/* Resumo geral do orçamento */}
-          <div style={{
-            backgroundColor: colors.backgroundCard,
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '12px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: `1px solid ${colors.border}`
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: colors.textSecondary }}>
-                Gasto: {formatCurrency(budgetStatus.summary?.totalSpent || 0)} de {formatCurrency(budgetStatus.summary?.totalBudget || 0)}
-              </span>
-              <span style={{
-                fontSize: '13px',
-                fontWeight: '600',
-                color: (budgetStatus.summary?.overallPercentage || 0) >= 100 ? '#ef4444' : (budgetStatus.summary?.overallPercentage || 0) >= 80 ? '#f59e0b' : '#22c55e'
-              }}>
-                {(budgetStatus.summary?.overallPercentage || 0).toFixed(0)}%
-              </span>
-            </div>
-            <div style={{ height: '8px', backgroundColor: isDark ? colors.border : '#f3f4f6', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(budgetStatus.summary?.overallPercentage || 0, 100)}%`,
-                backgroundColor: (budgetStatus.summary?.overallPercentage || 0) >= 100 ? '#ef4444' : (budgetStatus.summary?.overallPercentage || 0) >= 80 ? '#f59e0b' : '#22c55e',
-                borderRadius: '4px'
-              }} />
-            </div>
-            <p style={{ fontSize: '12px', color: '#22c55e', marginTop: '8px', fontWeight: '500' }}>
-              Você pode gastar mais {formatCurrency(budgetStatus.summary?.totalRemaining || 0)} este mês
-            </p>
-          </div>
-
-          {/* Categorias em alerta (>80%) */}
-          {budgetStatus.budgets.filter(b => b.percentage >= 80).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {budgetStatus.budgets.filter(b => b.percentage >= 80).slice(0, 3).map(budget => (
-                <div key={budget._id} style={{
-                  backgroundColor: isDark ? (budget.status === 'exceeded' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)') : (budget.status === 'exceeded' ? '#fef2f2' : '#fffbeb'),
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  borderLeft: `4px solid ${budget.status === 'exceeded' ? '#ef4444' : '#f59e0b'}`
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ fontWeight: '500', color: colors.text, fontSize: '14px' }}>
-                        {categoryLabels[budget.category] || budget.category}
-                      </p>
-                      <p style={{ fontSize: '12px', color: colors.textSecondary }}>
-                        {formatCurrency(budget.spent)} de {formatCurrency(budget.limit)}
-                      </p>
-                    </div>
-                    <span style={{
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      color: budget.status === 'exceeded' ? '#ef4444' : '#f59e0b'
-                    }}>
-                      {budget.percentage.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Próximas Contas */}
-      {upcomingBills.length > 0 && (
-        <div style={{ marginBottom: '24px' }} data-tour="upcoming-bills">
+      {upcomingBills && upcomingBills.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ fontWeight: '600', color: colors.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Calendar size={18} color="#f59e0b" />
@@ -1290,7 +583,7 @@ function Dashboard() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {upcomingBills.slice(0, 4).map((bill) => {
-              const style = getUrgencyStyle(bill.urgency)
+              const style = getUrgencyStyle(bill.daysUntilDue)
               return (
                 <div
                   key={bill._id}
@@ -1331,22 +624,11 @@ function Dashboard() {
                         cursor: payingBill === bill._id ? 'not-allowed' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        minWidth: '80px',
-                        justifyContent: 'center'
+                        gap: '4px'
                       }}
                     >
-                      {payingBill === bill._id ? (
-                        <>
-                          <span className="animate-spin" style={{ width: '14px', height: '14px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }}></span>
-                          Pagando...
-                        </>
-                      ) : (
-                        <>
-                          <Check size={14} />
-                          Pagar
-                        </>
-                      )}
+                      <Check size={14} />
+                      Pagar
                     </button>
                   </div>
                 </div>
@@ -1356,71 +638,367 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h3 style={{ fontWeight: '600', color: colors.text, marginBottom: '16px' }}>Despesas por Categoria</h3>
-          {getExpenseChartData().length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={getExpenseChartData()}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {getExpenseChartData().map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => formatCurrency(value)}
-                  contentStyle={{ backgroundColor: colors.backgroundCard, border: `1px solid ${colors.border}`, color: colors.text }}
-                />
-                <Legend wrapperStyle={{ color: colors.text }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ height: '256px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textSecondary }}>
-              Sem despesas registradas
-            </div>
-          )}
+      {/* Orçamento do Mês - Simplificado */}
+      {budgets && budgets.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ fontWeight: '600', color: colors.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Target size={18} color="#3b82f6" />
+              Orçamentos
+            </h3>
+            <button
+              onClick={() => navigate('/budget')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '13px',
+                color: colors.primary,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              Gerenciar <ChevronRight size={16} />
+            </button>
+          </div>
+          <div style={{
+            backgroundColor: colors.backgroundCard,
+            borderRadius: '12px',
+            padding: '16px',
+            border: `1px solid ${colors.border}`
+          }}>
+            {budgets.slice(0, 4).map(budget => (
+              <div key={budget.category} style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '13px', color: colors.text }}>
+                    {categoryLabels[budget.category] || budget.category}
+                  </span>
+                  <span style={{
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: budget.percentage >= 100 ? '#ef4444' : budget.percentage >= 80 ? '#f59e0b' : '#22c55e'
+                  }}>
+                    {budget.percentage}%
+                  </span>
+                </div>
+                <div style={{ height: '6px', backgroundColor: isDark ? colors.border : '#f3f4f6', borderRadius: '3px' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(budget.percentage, 100)}%`,
+                    backgroundColor: budget.percentage >= 100 ? '#ef4444' : budget.percentage >= 80 ? '#f59e0b' : '#22c55e',
+                    borderRadius: '3px'
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+      )}
 
-        <div className="card">
-          <h3 style={{ fontWeight: '600', color: colors.text, marginBottom: '16px' }}>Receitas vs Despesas</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={[
-              {
-                name: 'Este mês',
-                receitas: transactionSummary?.income || 0,
-                despesas: transactionSummary?.expenses || 0
-              }
-            ]}>
-              <XAxis dataKey="name" tick={{ fill: colors.textSecondary }} />
-              <YAxis tickFormatter={(value) => `R$${(value/1000).toFixed(0)}k`} tick={{ fill: colors.textSecondary }} />
-              <Tooltip
-                formatter={(value) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: colors.backgroundCard, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <Legend wrapperStyle={{ color: colors.text }} />
-              <Bar dataKey="receitas" fill="#22c55e" name="Receitas" />
-              <Bar dataKey="despesas" fill="#ef4444" name="Despesas" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Gráfico de Despesas - Com cores reais e legenda melhorada */}
+      <div className="card">
+        <h3 style={{ fontWeight: '600', color: colors.text, marginBottom: '16px' }}>Despesas por Categoria</h3>
+        {getExpenseChartData().length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+            {/* Gráfico de Pizza */}
+            <div style={{ flex: '0 0 200px', height: '200px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={getExpenseChartData()}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {getExpenseChartData().map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value) => formatCurrency(value)}
+                    contentStyle={{
+                      backgroundColor: colors.backgroundCard,
+                      border: `1px solid ${colors.border}`,
+                      color: colors.text,
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Legenda personalizada com nomes e percentuais - CLICÁVEL */}
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              {getExpenseChartData().map((item, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleCategoryClick(item)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    margin: '0 -12px',
+                    borderBottom: index < getExpenseChartData().length - 1 ? `1px solid ${colors.border}` : 'none',
+                    cursor: 'pointer',
+                    borderRadius: '8px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? '#374151' : '#f3f4f6'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '3px',
+                      backgroundColor: item.color,
+                      flexShrink: 0
+                    }} />
+                    <span style={{ fontSize: '14px', color: colors.text }}>{item.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.text }}>
+                      {formatCurrency(item.value)}
+                    </span>
+                    <span style={{
+                      fontSize: '12px',
+                      color: colors.textSecondary,
+                      backgroundColor: isDark ? '#374151' : '#f3f4f6',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      minWidth: '45px',
+                      textAlign: 'center'
+                    }}>
+                      {item.percentage}%
+                    </span>
+                    <ChevronRight size={16} color={colors.textSecondary} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textSecondary }}>
+            Sem despesas registradas este mês
+          </div>
+        )}
       </div>
 
-      {/* GuidedTour */}
-      {showTour && (
-        <GuidedTour
-          steps={defaultDashboardSteps}
-          onComplete={() => setShowTour(false)}
-          onSkip={() => setShowTour(false)}
-        />
+      {/* Modal de Drill-Down por Categoria */}
+      {showCategoryModal && selectedCategory && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px'
+          }}
+          onClick={(e) => e.target === e.currentTarget && closeCategoryModal()}
+        >
+          <div style={{
+            backgroundColor: colors.backgroundCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
+          }}>
+            {/* Header do Modal */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: `1px solid ${colors.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  onClick={closeCategoryModal}
+                  style={{
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: isDark ? '#374151' : '#f3f4f6',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <ArrowLeft size={20} color={colors.text} />
+                </button>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '4px',
+                      backgroundColor: selectedCategory.color
+                    }} />
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: colors.text, margin: 0 }}>
+                      {selectedCategory.name}
+                    </h3>
+                  </div>
+                  <p style={{ fontSize: '13px', color: colors.textSecondary, marginTop: '4px' }}>
+                    {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeCategoryModal}
+                style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </button>
+            </div>
+
+            {/* Resumo */}
+            <div style={{
+              padding: '16px 24px',
+              backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <p style={{ fontSize: '13px', color: colors.textSecondary }}>Total gasto</p>
+                <p style={{ fontSize: '24px', fontWeight: '700', color: '#ef4444' }}>
+                  {formatCurrency(selectedCategory.value)}
+                </p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: '13px', color: colors.textSecondary }}>
+                  {categoryTransactions.length} transações
+                </p>
+                <p style={{ fontSize: '14px', color: colors.text }}>
+                  {selectedCategory.percentage}% do total
+                </p>
+              </div>
+            </div>
+
+            {/* Lista de Transações */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '16px 24px'
+            }}>
+              {loadingCategory ? (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '40px',
+                  color: colors.textSecondary
+                }}>
+                  <Loader size={24} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ marginLeft: '12px' }}>Carregando...</span>
+                </div>
+              ) : categoryTransactions.length === 0 ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px',
+                  color: colors.textSecondary
+                }}>
+                  Nenhuma transação encontrada
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {categoryTransactions.map((transaction) => (
+                    <div
+                      key={transaction._id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 16px',
+                        backgroundColor: isDark ? '#1f2937' : '#f9fafb',
+                        borderRadius: '10px',
+                        border: `1px solid ${colors.border}`
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <p style={{
+                          fontWeight: '600',
+                          color: colors.text,
+                          marginBottom: '2px',
+                          fontSize: '14px'
+                        }}>
+                          {transaction.description}
+                        </p>
+                        <p style={{
+                          fontSize: '12px',
+                          color: colors.textSecondary
+                        }}>
+                          {formatDate(transaction.date)}
+                          {transaction.account && ` • ${transaction.account.name || transaction.account}`}
+                        </p>
+                      </div>
+                      <div style={{
+                        fontWeight: '700',
+                        color: '#ef4444',
+                        fontSize: '15px'
+                      }}>
+                        -{formatCurrency(transaction.amount)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: `1px solid ${colors.border}`,
+              display: 'flex',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={() => {
+                  closeCategoryModal()
+                  navigate('/transactions')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.backgroundCard,
+                  color: colors.text,
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                Ver todas as transações
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

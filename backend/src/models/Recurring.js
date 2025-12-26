@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { capitalize } = require('../utils/stringHelper')
 
 const recurringSchema = new mongoose.Schema({
   user: {
@@ -122,5 +123,14 @@ recurringSchema.methods.calculateNextDueDate = function() {
 
 recurringSchema.index({ user: 1, isActive: 1 })
 recurringSchema.index({ nextDueDate: 1 })
+
+// Capitalizar automaticamente nome e categoria (usando setter)
+recurringSchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v
+})
+
+recurringSchema.path('category').set(function(v) {
+  return v ? capitalize(v) : v
+})
 
 module.exports = mongoose.model('Recurring', recurringSchema)

@@ -201,8 +201,16 @@ router.get('/', async (req, res) => {
 
         // Verificar se há sobrescrita para este mês
         const override = overridesMap.get(r._id.toString())
+
+        // Se for do tipo 'skip', não mostrar esta conta neste mês
+        if (override?.type === 'skip') {
+          return
+        }
+
         const finalAmount = override?.amount ?? r.amount
         const finalName = override?.name ?? r.name
+        const isPartialPayment = override?.type === 'partial_payment'
+        const paidAmount = override?.paidAmount || 0
 
         // Usar função de urgência baseada na semana calendário
         const urgency = calculateUrgency(dueDate, isPaidThisMonth)
@@ -214,6 +222,11 @@ router.get('/', async (req, res) => {
           amount: finalAmount,
           originalAmount: r.amount, // Guardar valor original para referência
           hasOverride: !!override, // Indicar se tem sobrescrita
+          overrideType: override?.type, // Tipo de override (custom_amount, partial_payment)
+          overrideNotes: override?.notes, // Motivo do desconto/alteração
+          isPartialPayment,
+          paidAmount, // Quanto já foi pago (para pagamentos parciais)
+          remainingAmount: isPartialPayment ? finalAmount : null, // Quanto falta pagar
           dueDay: dueDay,
           isRecurring: true,
           isPaid: isPaidThisMonth,
@@ -346,7 +359,7 @@ router.get('/upcoming', async (req, res) => {
 })
 
 // @route   GET /api/bills/summary
-// @desc    Resumo das contas do mês (incluindo recorrências)
+// @desc    Resumo das contas do mês (incluindo recorrências e considerando overrides)
 router.get('/summary', async (req, res) => {
   try {
     const { month, year } = req.query
@@ -383,14 +396,22 @@ router.get('/summary', async (req, res) => {
       year: currentYear
     })
 
-    // Criar um Set com IDs das recorrências já pagas neste mês
+    // IMPORTANTE: Buscar overrides para considerar skip, descontos e pagamentos parciais
+    const overrides = await RecurringOverride.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    })
+
+    // Criar Maps para acesso rápido
     const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
+    const overridesMap = new Map()
+    overrides.forEach(o => overridesMap.set(o.recurring.toString(), o))
 
     const today = new Date()
 
-    // Processar recorrências para verificar se já foram pagas neste mês
+    // Processar recorrências considerando overrides
     const processedRecurrings = recurrings.map(r => {
-      // Verificar se a recorrência começou antes ou durante este mês
       const recurringStartDate = new Date(r.startDate)
       const recurringStartMonth = recurringStartDate.getUTCMonth() + 1
       const recurringStartYear = recurringStartDate.getUTCFullYear()
@@ -401,12 +422,19 @@ router.get('/summary', async (req, res) => {
         return null
       }
 
+      // Verificar override para este mês
+      const override = overridesMap.get(r._id.toString())
+
+      // Se tipo 'skip', NÃO incluir esta recorrência no total
+      if (override?.type === 'skip') {
+        return null
+      }
+
       // Para parcelamentos, verificar se a parcela deste mês está dentro do período
       if (r.isInstallment) {
         const monthsDiff = (currentYear - recurringStartYear) * 12 + (currentMonth - recurringStartMonth)
         const installmentForThisMonth = monthsDiff + 1
 
-        // Se parcela fora do período, não incluir
         if (installmentForThisMonth < 1 || installmentForThisMonth > r.totalInstallments) {
           return null
         }
@@ -414,6 +442,18 @@ router.get('/summary', async (req, res) => {
 
       // Verificar se foi pago usando a tabela RecurringPayment
       const isPaidThisMonth = paidRecurringIds.has(r._id.toString())
+
+      // Calcular valor real considerando override (desconto ou pagamento parcial)
+      let finalAmount = r.amount
+      if (override) {
+        if (override.type === 'custom_amount' && override.amount !== undefined) {
+          // Conta com desconto - usar valor do override
+          finalAmount = override.amount
+        } else if (override.type === 'partial_payment') {
+          // Pagamento parcial - usar valor restante
+          finalAmount = override.amount || (r.amount - (override.paidAmount || 0))
+        }
+      }
 
       // Calcular dia de vencimento para este mês
       let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
@@ -423,16 +463,23 @@ router.get('/summary', async (req, res) => {
       const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
       const isOverdue = !isPaidThisMonth && dueDate < today
 
-      return { ...r.toObject(), isPaidThisMonth, isOverdue }
+      return {
+        ...r.toObject(),
+        isPaidThisMonth,
+        isOverdue,
+        finalAmount,
+        hasOverride: !!override,
+        overrideType: override?.type
+      }
     }).filter(r => r !== null)
 
     // Calcular totais das bills
     const billsTotal = bills.reduce((sum, b) => sum + b.amount, 0)
     const billsPaid = bills.filter(b => b.isPaid).reduce((sum, b) => sum + b.amount, 0)
 
-    // Calcular totais das recorrências
-    const recurringTotal = processedRecurrings.reduce((sum, r) => sum + r.amount, 0)
-    const recurringPaid = processedRecurrings.filter(r => r.isPaidThisMonth).reduce((sum, r) => sum + r.amount, 0)
+    // Calcular totais das recorrências USANDO O VALOR FINAL (com desconto aplicado)
+    const recurringTotal = processedRecurrings.reduce((sum, r) => sum + r.finalAmount, 0)
+    const recurringPaid = processedRecurrings.filter(r => r.isPaidThisMonth).reduce((sum, r) => sum + r.finalAmount, 0)
     const recurringOverdue = processedRecurrings.filter(r => r.isOverdue).length
 
     // Totais combinados
@@ -443,6 +490,11 @@ router.get('/summary', async (req, res) => {
     const pendingCount = bills.filter(b => !b.isPaid).length + processedRecurrings.filter(r => !r.isPaidThisMonth).length
     const overdueCount = bills.filter(b => !b.isPaid && b.daysUntilDue < 0).length + recurringOverdue
 
+    // Calcular descontos aplicados (para transparência)
+    const discountsApplied = processedRecurrings
+      .filter(r => r.hasOverride && r.overrideType === 'custom_amount')
+      .reduce((sum, r) => sum + (r.amount - r.finalAmount), 0)
+
     res.json({
       total,
       paid,
@@ -450,7 +502,8 @@ router.get('/summary', async (req, res) => {
       paidCount,
       pendingCount,
       overdueCount,
-      totalCount: bills.length + processedRecurrings.length
+      totalCount: bills.length + processedRecurrings.length,
+      discountsApplied // Valor total de descontos aplicados
     })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar resumo', error: error.message })
@@ -525,7 +578,7 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 //          Isso permite alterar o valor de uma conta apenas para aquele mês, sem afetar outros meses
 router.put('/:id/override', validateObjectId(), async (req, res) => {
   try {
-    const { month, year, amount, name, notes } = req.body
+    const { month, year, amount, name, notes, type } = req.body
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
@@ -551,6 +604,8 @@ router.put('/:id/override', validateObjectId(), async (req, res) => {
         recurring: req.params.id,
         month: parseInt(month),
         year: parseInt(year),
+        type: type || 'custom_amount',
+        originalAmount: recurring.amount,
         ...(amount !== undefined && { amount: parseFloat(amount) }),
         ...(name !== undefined && { name }),
         ...(notes !== undefined && { notes })
@@ -568,6 +623,266 @@ router.put('/:id/override', validateObjectId(), async (req, res) => {
     })
   } catch (error) {
     res.status(400).json({ message: 'Erro ao criar sobrescrita', error: error.message })
+  }
+})
+
+// @route   POST /api/bills/:id/skip
+// @desc    Pular uma conta apenas neste mês específico (não apaga a recorrência)
+router.post('/:id/skip', validateObjectId(), async (req, res) => {
+  try {
+    const { month, year, notes } = req.body
+
+    if (!month || !year) {
+      return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
+    }
+
+    // Verificar se a recorrência existe
+    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    // Criar sobrescrita do tipo 'skip'
+    const override = await RecurringOverride.findOneAndUpdate(
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year)
+      },
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year),
+        type: 'skip',
+        originalAmount: recurring.amount,
+        amount: 0,
+        notes: notes || 'Mês pulado'
+      },
+      { upsert: true, new: true }
+    )
+
+    res.json({
+      message: `${recurring.name} pulada para ${month}/${year}. Ela continuará aparecendo nos outros meses.`,
+      override
+    })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao pular conta', error: error.message })
+  }
+})
+
+// @route   POST /api/bills/:id/pay-with-discount
+// @desc    Pagar conta com desconto apenas neste mês
+router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
+  try {
+    const { month, year, discountAmount, notes } = req.body
+
+    if (!month || !year) {
+      return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
+    }
+
+    if (!discountAmount || isNaN(parseFloat(discountAmount)) || parseFloat(discountAmount) <= 0) {
+      return res.status(400).json({ message: 'Valor do desconto deve ser maior que zero' })
+    }
+
+    // Verificar se a recorrência existe
+    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    const finalAmount = recurring.amount - parseFloat(discountAmount)
+    if (finalAmount < 0) {
+      return res.status(400).json({ message: 'Desconto não pode ser maior que o valor da conta' })
+    }
+
+    // Verificar se já foi pago neste mês
+    const existingPayment = await RecurringPayment.findOne({
+      user: req.user._id,
+      recurring: recurring._id,
+      month: parseInt(month),
+      year: parseInt(year)
+    })
+
+    if (existingPayment) {
+      return res.status(400).json({ message: 'Esta conta já foi paga neste mês' })
+    }
+
+    // Criar sobrescrita com o valor com desconto
+    await RecurringOverride.findOneAndUpdate(
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year)
+      },
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year),
+        type: 'custom_amount',
+        originalAmount: recurring.amount,
+        amount: finalAmount,
+        notes: notes || `Desconto de R$ ${parseFloat(discountAmount).toFixed(2)}`
+      },
+      { upsert: true, new: true }
+    )
+
+    // Calcular a data da transação
+    const dueDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
+    const lastDayOfMonth = new Date(parseInt(year), parseInt(month), 0).getDate()
+    const transactionDate = new Date(parseInt(year), parseInt(month) - 1, Math.min(dueDay, lastDayOfMonth), 12, 0, 0)
+
+    // Criar transação com o valor final (com desconto)
+    const transaction = await Transaction.create({
+      user: req.user._id,
+      type: recurring.type,
+      category: recurring.category,
+      description: `${recurring.name} (com desconto)`,
+      amount: finalAmount,
+      account: recurring.account,
+      date: transactionDate,
+      recurringId: recurring._id
+    })
+
+    // Registrar o pagamento
+    const payment = await RecurringPayment.create({
+      user: req.user._id,
+      recurring: recurring._id,
+      month: parseInt(month),
+      year: parseInt(year),
+      transaction: transaction._id,
+      amountPaid: finalAmount
+    })
+
+    res.json({
+      message: `Conta paga com desconto de R$ ${parseFloat(discountAmount).toFixed(2)}`,
+      payment,
+      transaction,
+      originalAmount: recurring.amount,
+      finalAmount
+    })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao pagar com desconto', error: error.message })
+  }
+})
+
+// @route   POST /api/bills/:id/pay-partial
+// @desc    Registrar pagamento parcial de uma conta
+router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
+  try {
+    const { month, year, paidAmount, notes } = req.body
+
+    if (!month || !year) {
+      return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
+    }
+
+    if (!paidAmount || isNaN(parseFloat(paidAmount)) || parseFloat(paidAmount) <= 0) {
+      return res.status(400).json({ message: 'Valor pago deve ser maior que zero' })
+    }
+
+    // Verificar se a recorrência existe
+    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    // Verificar se já existe um override para este mês
+    let override = await RecurringOverride.findOne({
+      user: req.user._id,
+      recurring: req.params.id,
+      month: parseInt(month),
+      year: parseInt(year)
+    })
+
+    const previousPaid = override?.paidAmount || 0
+    const totalPaid = previousPaid + parseFloat(paidAmount)
+    const originalAmount = override?.originalAmount || recurring.amount
+    const remaining = originalAmount - totalPaid
+
+    if (totalPaid > originalAmount) {
+      return res.status(400).json({
+        message: `Valor total pago (R$ ${totalPaid.toFixed(2)}) excede o valor da conta (R$ ${originalAmount.toFixed(2)})`
+      })
+    }
+
+    // Criar ou atualizar sobrescrita do tipo 'partial_payment'
+    override = await RecurringOverride.findOneAndUpdate(
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year)
+      },
+      {
+        user: req.user._id,
+        recurring: req.params.id,
+        month: parseInt(month),
+        year: parseInt(year),
+        type: 'partial_payment',
+        originalAmount: originalAmount,
+        paidAmount: totalPaid,
+        amount: remaining,
+        notes: notes || `Pagamento parcial: R$ ${totalPaid.toFixed(2)} de R$ ${originalAmount.toFixed(2)}`
+      },
+      { upsert: true, new: true }
+    )
+
+    // Calcular a data da transação
+    const dueDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
+    const lastDayOfMonth = new Date(parseInt(year), parseInt(month), 0).getDate()
+    const transactionDate = new Date(parseInt(year), parseInt(month) - 1, Math.min(dueDay, lastDayOfMonth), 12, 0, 0)
+
+    // Criar transação do pagamento parcial
+    const transaction = await Transaction.create({
+      user: req.user._id,
+      type: recurring.type,
+      category: recurring.category,
+      description: `${recurring.name} (pagamento parcial)`,
+      amount: parseFloat(paidAmount),
+      account: recurring.account,
+      date: transactionDate,
+      recurringId: recurring._id
+    })
+
+    // Se pagou tudo, registrar como pagamento completo
+    if (remaining <= 0) {
+      await RecurringPayment.findOneAndUpdate(
+        {
+          user: req.user._id,
+          recurring: recurring._id,
+          month: parseInt(month),
+          year: parseInt(year)
+        },
+        {
+          user: req.user._id,
+          recurring: recurring._id,
+          month: parseInt(month),
+          year: parseInt(year),
+          transaction: transaction._id,
+          amountPaid: totalPaid
+        },
+        { upsert: true, new: true }
+      )
+    }
+
+    res.json({
+      message: remaining > 0
+        ? `Pagamento parcial registrado. Faltam R$ ${remaining.toFixed(2)}`
+        : 'Conta totalmente paga!',
+      override,
+      transaction,
+      totalPaid,
+      remaining,
+      isFullyPaid: remaining <= 0
+    })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao registrar pagamento parcial', error: error.message })
   }
 })
 
@@ -690,6 +1005,62 @@ router.post('/:id/pay', validateObjectId(), async (req, res) => {
     res.json({ bill, transaction, message: 'Conta paga e transação registrada!' })
   } catch (error) {
     res.status(400).json({ message: 'Erro ao pagar conta', error: error.message })
+  }
+})
+
+// @route   POST /api/bills/:id/unpay
+// @desc    Cancelar pagamento de uma conta (desfazer)
+router.post('/:id/unpay', validateObjectId(), async (req, res) => {
+  try {
+    const { isFromRecurring, month, year } = req.body
+
+    // Determinar mês/ano do pagamento
+    const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const paymentYear = year ? parseInt(year) : new Date().getFullYear()
+
+    // Se for de recorrência
+    if (isFromRecurring) {
+      // Buscar e remover o pagamento da tabela RecurringPayment
+      const payment = await RecurringPayment.findOneAndDelete({
+        user: req.user._id,
+        recurring: req.params.id,
+        month: paymentMonth,
+        year: paymentYear
+      })
+
+      if (!payment) {
+        return res.status(404).json({ message: 'Pagamento não encontrado para este mês' })
+      }
+
+      // Remover a transação associada, se existir
+      if (payment.transaction) {
+        await Transaction.findByIdAndDelete(payment.transaction)
+      }
+
+      return res.json({
+        message: `Pagamento de ${paymentMonth}/${paymentYear} cancelado com sucesso`,
+        deletedPayment: payment
+      })
+    }
+
+    // Fluxo normal para bills
+    const bill = await Bill.findOne({ _id: req.params.id, user: req.user._id })
+
+    if (!bill) {
+      return res.status(404).json({ message: 'Conta não encontrada' })
+    }
+
+    if (!bill.isPaid) {
+      return res.status(400).json({ message: 'Esta conta já está pendente' })
+    }
+
+    bill.isPaid = false
+    bill.paidAt = null
+    await bill.save()
+
+    res.json({ bill, message: 'Pagamento cancelado com sucesso!' })
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao cancelar pagamento', error: error.message })
   }
 })
 

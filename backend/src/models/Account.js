@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { capitalize } = require('../utils/stringHelper')
 
 const accountSchema = new mongoose.Schema({
   user: {
@@ -65,5 +66,14 @@ const accountSchema = new mongoose.Schema({
 
 // Índice para busca rápida
 accountSchema.index({ user: 1, isActive: 1 })
+
+// Capitalizar automaticamente nome e instituição (usando setter)
+accountSchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v
+})
+
+accountSchema.path('institution').set(function(v) {
+  return v ? capitalize(v) : v
+})
 
 module.exports = mongoose.model('Account', accountSchema)

@@ -9,6 +9,8 @@ const Budget = require('../models/Budget')
 const Goal = require('../models/Goal')
 const Bill = require('../models/Bill')
 const Recurring = require('../models/Recurring')
+const RecurringOverride = require('../models/RecurringOverride')
+const RecurringPayment = require('../models/RecurringPayment')
 
 router.use(protect)
 
@@ -323,6 +325,40 @@ router.get('/cashflow-forecast', async (req, res) => {
       currentYear: currentYear
     })
 
+    // IMPORTANTE: Buscar overrides para os próximos 2 meses (para cobrir os 30 dias)
+    const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1
+    const nextYear = currentMonth === 12 ? currentYear + 1 : currentYear
+    const overrides = await RecurringOverride.find({
+      user: userId,
+      $or: [
+        { month: currentMonth, year: currentYear },
+        { month: nextMonth, year: nextYear }
+      ]
+    })
+
+    // Criar mapa de overrides por recorrência/mês/ano
+    const overridesMap = new Map()
+    overrides.forEach(o => {
+      const key = `${o.recurring.toString()}_${o.month}_${o.year}`
+      overridesMap.set(key, o)
+    })
+
+    // Buscar pagamentos já realizados nos meses relevantes
+    const payments = await RecurringPayment.find({
+      user: userId,
+      $or: [
+        { month: currentMonth, year: currentYear },
+        { month: nextMonth, year: nextYear }
+      ]
+    })
+
+    // Criar Set de recorrências já pagas por mês
+    const paidRecurringMap = new Map()
+    payments.forEach(p => {
+      const key = `${p.recurring.toString()}_${p.month}_${p.year}`
+      paidRecurringMap.set(key, true)
+    })
+
     // Gerar previsão para os próximos 30 dias
     for (let i = 0; i <= 30; i++) {
       const date = new Date(today)
@@ -347,17 +383,63 @@ router.get('/cashflow-forecast', async (req, res) => {
         }
 
         if (isDue) {
+          // Verificar override para este mês específico
+          const overrideKey = `${rec._id.toString()}_${month}_${year}`
+          const override = overridesMap.get(overrideKey)
+
+          // Verificar se já foi pago
+          const paymentKey = `${rec._id.toString()}_${month}_${year}`
+          const isPaid = paidRecurringMap.has(paymentKey)
+
+          // Se foi pulado (skip), não incluir na previsão
+          if (override?.type === 'skip') {
+            continue
+          }
+
+          // Se já foi pago, não incluir na previsão
+          if (isPaid) {
+            continue
+          }
+
+          // Calcular valor considerando override (desconto ou pagamento parcial)
+          let finalAmount = rec.amount
+          let hasDiscount = false
+          if (override) {
+            if (override.type === 'custom_amount' && override.amount !== undefined) {
+              finalAmount = override.amount
+              hasDiscount = true
+            } else if (override.type === 'partial_payment') {
+              // Para pagamento parcial, usar o valor restante
+              finalAmount = override.amount || (rec.amount - (override.paidAmount || 0))
+              hasDiscount = true
+            }
+          }
+
           if (rec.type === 'income') {
-            dayIncome += rec.amount
-            dayEvents.push({ type: 'income', name: rec.name, amount: rec.amount, source: 'recurring' })
+            dayIncome += finalAmount
+            dayEvents.push({
+              type: 'income',
+              name: rec.name,
+              amount: finalAmount,
+              originalAmount: hasDiscount ? rec.amount : undefined,
+              hasDiscount,
+              source: 'recurring'
+            })
           } else {
-            dayExpense += rec.amount
-            dayEvents.push({ type: 'expense', name: rec.name, amount: rec.amount, source: 'recurring' })
+            dayExpense += finalAmount
+            dayEvents.push({
+              type: 'expense',
+              name: rec.name,
+              amount: finalAmount,
+              originalAmount: hasDiscount ? rec.amount : undefined,
+              hasDiscount,
+              source: 'recurring'
+            })
           }
         }
       }
 
-      // Verificar contas a pagar
+      // Verificar contas a pagar (bills diretas, não recorrências)
       for (const bill of bills) {
         if (bill.dueDay === day && month === currentMonth && year === currentYear) {
           dayExpense += bill.amount
@@ -408,6 +490,186 @@ router.get('/cashflow-forecast', async (req, res) => {
     })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao gerar previsão', error: error.message })
+  }
+})
+
+// @route   GET /api/patrimony/dashboard
+// @desc    Endpoint unificado do dashboard - retorna tudo em uma chamada
+router.get('/dashboard', async (req, res) => {
+  try {
+    const userId = req.user._id
+    const today = new Date()
+    const currentMonth = today.getUTCMonth() + 1
+    const currentYear = today.getUTCFullYear()
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
+
+    // Buscar todos os dados em paralelo
+    const [
+      accounts,
+      investments,
+      debts,
+      monthTransactions,
+      upcomingBills,
+      budgets,
+      goals,
+      spentByCategory
+    ] = await Promise.all([
+      Account.find({ user: userId, isActive: true }),
+      Investment.find({ user: userId }),
+      Debt.find({ user: userId, status: { $ne: 'paid' } }),
+      Transaction.aggregate([
+        {
+          $match: {
+            user: userId,
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+          }
+        },
+        {
+          $group: {
+            _id: '$type',
+            total: { $sum: '$amount' }
+          }
+        }
+      ]),
+      Bill.find({
+        user: userId,
+        isPaid: false,
+        currentMonth: currentMonth,
+        currentYear: currentYear
+      }).sort({ dueDay: 1 }).limit(5),
+      Budget.find({ user: userId, month: currentMonth, year: currentYear }),
+      Goal.find({ user: userId, status: 'active' }).limit(3),
+      Transaction.aggregate([
+        {
+          $match: {
+            user: userId,
+            type: 'expense',
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+          }
+        },
+        {
+          $group: {
+            _id: '$category',
+            total: { $sum: '$amount' }
+          }
+        },
+        { $sort: { total: -1 } },
+        { $limit: 5 }
+      ])
+    ])
+
+    // Calcular totais
+    const accountsTotal = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0)
+    const investmentsTotal = investments.reduce((sum, inv) => {
+      return sum + (inv.quantity * (inv.currentPrice || inv.purchasePrice))
+    }, 0)
+    const debtsTotal = debts.reduce((sum, debt) => sum + (debt.remainingAmount || 0), 0)
+    const netWorth = accountsTotal + investmentsTotal - debtsTotal
+
+    const monthIncome = monthTransactions.find(t => t._id === 'income')?.total || 0
+    const monthExpense = monthTransactions.find(t => t._id === 'expense')?.total || 0
+    const monthBalance = monthIncome - monthExpense
+
+    // Score de saúde simplificado (0-100)
+    let healthScore = 100
+    // Reserva de emergência
+    const liquidAssets = accounts
+      .filter(a => ['checking', 'savings', 'cash'].includes(a.type))
+      .reduce((sum, a) => sum + (a.balance || 0), 0)
+    const avgMonthlyExpense = monthExpense || 1
+    const emergencyMonths = liquidAssets / avgMonthlyExpense
+    if (emergencyMonths < 3) healthScore -= 20
+    else if (emergencyMonths < 6) healthScore -= 10
+
+    // Dívidas
+    const totalAssets = accountsTotal + investmentsTotal
+    const debtRatio = totalAssets > 0 ? (debtsTotal / totalAssets) * 100 : 0
+    if (debtRatio > 50) healthScore -= 25
+    else if (debtRatio > 30) healthScore -= 15
+    else if (debtRatio > 0) healthScore -= 5
+
+    // Orçamentos estourados
+    const spentMap = {}
+    spentByCategory.forEach(s => { spentMap[s._id] = s.total })
+    const budgetsOverLimit = budgets.filter(b => (spentMap[b.category] || 0) > b.limit).length
+    if (budgetsOverLimit > 0) healthScore -= (budgetsOverLimit * 5)
+
+    healthScore = Math.max(0, Math.min(100, healthScore))
+
+    // Determinar nível
+    let healthLevel = 'excellent'
+    if (healthScore < 40) healthLevel = 'critical'
+    else if (healthScore < 60) healthLevel = 'warning'
+    else if (healthScore < 80) healthLevel = 'good'
+
+    // Formatar contas próximas
+    const formattedBills = upcomingBills.map(bill => {
+      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, bill.dueDay))
+      const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+      return {
+        _id: bill._id,
+        name: bill.name,
+        amount: bill.amount,
+        dueDay: bill.dueDay,
+        category: bill.category,
+        isOverdue: diffDays < 0,
+        daysUntilDue: diffDays
+      }
+    })
+
+    // Formatar orçamentos
+    const formattedBudgets = budgets.map(b => ({
+      category: b.category,
+      limit: b.limit,
+      spent: spentMap[b.category] || 0,
+      percentage: Math.round(((spentMap[b.category] || 0) / b.limit) * 100)
+    })).sort((a, b) => b.percentage - a.percentage).slice(0, 5)
+
+    res.json({
+      // Resumo financeiro
+      summary: {
+        netWorth,
+        accountsTotal,
+        investmentsTotal,
+        debtsTotal,
+        monthIncome,
+        monthExpense,
+        monthBalance
+      },
+      // Saúde financeira (simplificada)
+      health: {
+        score: healthScore,
+        level: healthLevel
+      },
+      // Próximas contas
+      upcomingBills: formattedBills,
+      // Top categorias de gasto
+      topCategories: spentByCategory.map(c => ({
+        category: c._id,
+        total: c.total
+      })),
+      // Orçamentos
+      budgets: formattedBudgets,
+      // Metas ativas
+      goals: goals.map(g => ({
+        _id: g._id,
+        name: g.name,
+        targetAmount: g.targetAmount,
+        currentAmount: g.currentAmount,
+        progress: Math.round((g.currentAmount / g.targetAmount) * 100)
+      })),
+      // Contas bancárias
+      accounts: accounts.map(a => ({
+        _id: a._id,
+        name: a.name,
+        type: a.type,
+        balance: a.balance,
+        color: a.color
+      }))
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao carregar dashboard', error: error.message })
   }
 })
 

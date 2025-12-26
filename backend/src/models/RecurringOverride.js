@@ -1,7 +1,7 @@
 const mongoose = require('mongoose')
 
 // Este modelo permite sobrescrever valores de uma recorrência para um mês específico
-// Útil quando o valor de uma conta varia em determinado mês (ex: conta de luz mais cara no verão)
+// Útil para: pular um mês, aplicar desconto pontual, pagamento parcial
 const recurringOverrideSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,15 +24,28 @@ const recurringOverrideSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // Tipo de override
+  type: {
+    type: String,
+    enum: ['custom_amount', 'skip', 'partial_payment'],
+    default: 'custom_amount'
+  },
   // Campos que podem ser sobrescritos para este mês específico
   amount: {
-    type: Number
+    type: Number  // Valor alterado (com desconto ou aumento)
+  },
+  originalAmount: {
+    type: Number  // Valor original da recorrência (para referência)
+  },
+  paidAmount: {
+    type: Number,  // Para pagamento parcial: quanto já foi pago
+    default: 0
   },
   name: {
     type: String
   },
   notes: {
-    type: String
+    type: String  // Motivo do desconto, pular, etc.
   }
 }, {
   timestamps: true

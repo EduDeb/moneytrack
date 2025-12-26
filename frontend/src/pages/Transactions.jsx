@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react'
 import api from '../services/api'
-import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search, Sparkles } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search, Sparkles, CheckSquare, Square, XCircle, Check, Loader } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import { useCategories } from '../contexts/CategoriesContext'
 import MonthSelector from '../components/MonthSelector'
@@ -22,6 +22,11 @@ function Transactions() {
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(null)
   const [sortOrder, setSortOrder] = useState('desc') // 'desc' = mais recentes, 'asc' = mais antigos
+
+  // Seleção múltipla
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedItems, setSelectedItems] = useState([])
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false)
 
   // Auto-sugestão de categoria
   const [suggestions, setSuggestions] = useState([])
@@ -186,7 +191,8 @@ function Transactions() {
       setShowModal(false)
       setEditingTransaction(null)
       resetForm()
-      fetchTransactions()
+      // Atualizar tanto transações quanto resumo imediatamente
+      await Promise.all([fetchTransactions(), fetchSummary()])
     } catch (error) {
       console.error('Erro ao salvar transação:', error)
       alert('Erro ao salvar transação. Tente novamente.')
@@ -202,7 +208,8 @@ function Transactions() {
     setDeleting(id)
     try {
       await api.delete(`/transactions/${id}`)
-      fetchTransactions()
+      // Atualizar tanto transações quanto resumo imediatamente
+      await Promise.all([fetchTransactions(), fetchSummary()])
     } catch (error) {
       console.error('Erro ao excluir transação:', error)
       alert('Erro ao excluir transação. Tente novamente.')
@@ -279,6 +286,59 @@ function Transactions() {
 
     return result
   }, [transactions, filter.search, sortOrder])
+
+  // Funções de seleção múltipla
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode)
+    setSelectedItems([])
+  }
+
+  const toggleItemSelection = (id) => {
+    setSelectedItems(prev =>
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
+    )
+  }
+
+  const selectAllItems = () => {
+    if (selectedItems.length === filteredTransactions.length) {
+      setSelectedItems([])
+    } else {
+      setSelectedItems(filteredTransactions.map(t => t._id))
+    }
+  }
+
+  // Excluir todas selecionadas
+  const handleDeleteSelected = async () => {
+    if (selectedItems.length === 0) return
+
+    if (!confirm(`Tem certeza que deseja excluir ${selectedItems.length} transação(ões)?`)) return
+
+    setIsProcessingBatch(true)
+    let successCount = 0
+    let errorCount = 0
+
+    for (const id of selectedItems) {
+      try {
+        await api.delete(`/transactions/${id}`)
+        successCount++
+      } catch (error) {
+        console.error(`Erro ao excluir transação:`, error)
+        errorCount++
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    // Atualizar tanto transações quanto resumo imediatamente
+    await Promise.all([fetchTransactions(), fetchSummary()])
+
+    if (errorCount > 0) {
+      alert(`${successCount} transação(ões) excluída(s). ${errorCount} erro(s).`)
+    }
+  }
 
   return (
     <div>
@@ -419,6 +479,22 @@ function Transactions() {
             )}
           </div>
 
+          {/* Botão de seleção múltipla */}
+          <button
+            onClick={toggleSelectionMode}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${selectionMode ? '#3b82f6' : colors.border}`,
+              backgroundColor: selectionMode ? '#3b82f6' : 'transparent',
+              color: selectionMode ? 'white' : colors.textSecondary,
+              fontWeight: '500', cursor: 'pointer', fontSize: '13px'
+            }}
+          >
+            {selectionMode ? <XCircle size={16} /> : <CheckSquare size={16} />}
+            {selectionMode ? 'Cancelar' : 'Selecionar'}
+          </button>
+
           {/* Botão Nova Transação */}
           <button
             onClick={() => { resetForm(); setEditingTransaction(null); setShowModal(true) }}
@@ -433,6 +509,49 @@ function Transactions() {
           </button>
         </div>
       </div>
+
+      {/* Barra de ações de seleção múltipla */}
+      {selectionMode && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px',
+          padding: '12px 16px', backgroundColor: isDark ? '#1e3a5f' : '#eff6ff',
+          borderRadius: '12px', border: '1px solid #3b82f6', flexWrap: 'wrap'
+        }}>
+          <button
+            onClick={selectAllItems}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+              borderRadius: '6px', border: `1px solid ${colors.border}`,
+              backgroundColor: colors.backgroundCard, color: colors.text,
+              fontWeight: '500', cursor: 'pointer', fontSize: '13px'
+            }}
+          >
+            {selectedItems.length === filteredTransactions.length ? <Square size={16} /> : <CheckSquare size={16} />}
+            {selectedItems.length === filteredTransactions.length ? 'Desmarcar Todas' : 'Selecionar Todas'}
+          </button>
+
+          <span style={{ color: colors.text, fontSize: '13px', fontWeight: '500' }}>
+            {selectedItems.length} selecionada(s)
+          </span>
+
+          <div style={{ flex: 1 }} />
+
+          <button
+            onClick={handleDeleteSelected}
+            disabled={selectedItems.length === 0 || isProcessingBatch}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+              borderRadius: '8px', border: 'none',
+              backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#ef4444',
+              color: 'white', fontWeight: '500',
+              cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer', fontSize: '13px'
+            }}
+          >
+            {isProcessingBatch ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={16} />}
+            Excluir Selecionadas
+          </button>
+        </div>
+      )}
 
       {/* Contador e Ordenação */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -470,16 +589,54 @@ function Transactions() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: isDark ? colors.border : '#f8fafc' }}>
+                {selectionMode && (
+                  <th style={{ padding: '12px 8px', textAlign: 'center', width: '40px' }}>
+                    <div
+                      onClick={selectAllItems}
+                      style={{
+                        width: '20px', height: '20px', borderRadius: '4px', cursor: 'pointer',
+                        border: `2px solid ${selectedItems.length === filteredTransactions.length ? '#3b82f6' : colors.border}`,
+                        backgroundColor: selectedItems.length === filteredTransactions.length ? '#3b82f6' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+                      }}
+                    >
+                      {selectedItems.length === filteredTransactions.length && <Check size={12} color="white" />}
+                    </div>
+                  </th>
+                )}
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Data</th>
                 <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Descrição</th>
                 <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Categoria</th>
                 <th style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Valor</th>
-                <th style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Ações</th>
+                {!selectionMode && <th style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase' }}>Ações</th>}
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map(t => (
-                <tr key={t._id} style={{ borderTop: `1px solid ${colors.border}` }}>
+              {filteredTransactions.map(t => {
+                const isSelected = selectedItems.includes(t._id)
+                return (
+                <tr
+                  key={t._id}
+                  onClick={selectionMode ? () => toggleItemSelection(t._id) : undefined}
+                  style={{
+                    borderTop: `1px solid ${colors.border}`,
+                    backgroundColor: isSelected ? (isDark ? '#1e3a5f' : '#dbeafe') : 'transparent',
+                    cursor: selectionMode ? 'pointer' : 'default',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  {selectionMode && (
+                    <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                      <div style={{
+                        width: '20px', height: '20px', borderRadius: '4px',
+                        border: `2px solid ${isSelected ? '#3b82f6' : colors.border}`,
+                        backgroundColor: isSelected ? '#3b82f6' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+                      }}>
+                        {isSelected && <Check size={12} color="white" />}
+                      </div>
+                    </td>
+                  )}
                   <td style={{ padding: '12px 16px', color: colors.text, fontSize: '14px' }}>{formatDate(t.date)}</td>
                   <td style={{ padding: '12px 8px', color: colors.text, fontSize: '14px' }}>{t.description || '-'}</td>
                   <td style={{ padding: '12px 8px' }}>
@@ -497,16 +654,17 @@ function Transactions() {
                   }}>
                     {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                   </td>
+                  {!selectionMode && (
                   <td style={{ padding: '12px 8px', textAlign: 'right' }}>
                     <button
-                      onClick={() => openEditModal(t)}
+                      onClick={(e) => { e.stopPropagation(); openEditModal(t) }}
                       disabled={deleting === t._id}
                       style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, opacity: deleting === t._id ? 0.5 : 1 }}
                     >
                       <Edit2 size={16} />
                     </button>
                     <button
-                      onClick={() => handleDelete(t._id)}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(t._id) }}
                       disabled={deleting === t._id}
                       style={{ padding: '4px', background: 'none', border: 'none', cursor: deleting === t._id ? 'not-allowed' : 'pointer', color: deleting === t._id ? '#ef4444' : colors.textSecondary, marginLeft: '8px' }}
                     >
@@ -517,8 +675,9 @@ function Transactions() {
                       )}
                     </button>
                   </td>
+                  )}
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

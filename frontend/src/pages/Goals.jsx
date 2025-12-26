@@ -2,10 +2,12 @@ import { useState, useEffect, useContext, useMemo } from 'react'
 import api from '../services/api'
 import {
   Target, Plus, Trash2, Edit2, X, PiggyBank, TrendingDown, TrendingUp,
-  Banknote, CreditCard, Calendar, DollarSign, Check
+  Banknote, CreditCard, Calendar, DollarSign, Check, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import SortToggle from '../components/SortToggle'
+
+const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 const goalTypes = [
   { value: 'savings', label: 'Poupança', icon: PiggyBank, color: '#22c55e', description: 'Juntar dinheiro para um objetivo' },
@@ -29,6 +31,10 @@ function Goals() {
   const [depositAmount, setDepositAmount] = useState('')
   const [sortOrder, setSortOrder] = useState('desc') // 'desc' = maior progresso, 'asc' = menor progresso
 
+  // Seletor de mês/ano para metas de limite de gastos
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+
   const [form, setForm] = useState({
     name: '',
     type: 'savings',
@@ -41,12 +47,12 @@ function Goals() {
 
   useEffect(() => {
     fetchGoals()
-  }, [])
+  }, [selectedMonth, selectedYear])
 
   const fetchGoals = async () => {
     try {
       const [goalsRes, summaryRes] = await Promise.all([
-        api.get('/goals'),
+        api.get(`/goals?month=${selectedMonth}&year=${selectedYear}`),
         api.get('/goals/summary')
       ])
       setGoals(goalsRes.data.goals)
@@ -143,6 +149,36 @@ function Goals() {
 
   const getGoalType = (type) => goalTypes.find(t => t.value === type) || goalTypes[0]
 
+  // Navegação de mês
+  const goToPreviousMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12)
+      setSelectedYear(selectedYear - 1)
+    } else {
+      setSelectedMonth(selectedMonth - 1)
+    }
+  }
+
+  const goToNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1)
+      setSelectedYear(selectedYear + 1)
+    } else {
+      setSelectedMonth(selectedMonth + 1)
+    }
+  }
+
+  const goToCurrentMonth = () => {
+    const now = new Date()
+    setSelectedMonth(now.getMonth() + 1)
+    setSelectedYear(now.getFullYear())
+  }
+
+  const isCurrentMonth = selectedMonth === new Date().getMonth() + 1 && selectedYear === new Date().getFullYear()
+
+  // Verificar se tem metas do tipo expense_limit
+  const hasExpenseLimitGoals = goals.some(g => g.type === 'expense_limit')
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
@@ -162,6 +198,55 @@ function Goals() {
         >
           <Plus size={18} />
           Nova Meta
+        </button>
+      </div>
+
+      {/* Seletor de Mês */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px',
+        marginBottom: '24px', padding: '16px',
+        backgroundColor: colors.backgroundCard, borderRadius: '12px', border: `1px solid ${colors.border}`
+      }}>
+        <button
+          onClick={goToPreviousMonth}
+          style={{
+            padding: '8px', borderRadius: '8px', border: 'none',
+            backgroundColor: isDark ? colors.border : '#f3f4f6',
+            cursor: 'pointer', display: 'flex', alignItems: 'center'
+          }}
+        >
+          <ChevronLeft size={20} color={colors.text} />
+        </button>
+
+        <div style={{ textAlign: 'center', minWidth: '180px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.text, margin: 0 }}>
+            {monthNames[selectedMonth - 1]} {selectedYear}
+          </h2>
+          {!isCurrentMonth && (
+            <button
+              onClick={goToCurrentMonth}
+              style={{
+                fontSize: '12px', color: '#3b82f6', background: 'none',
+                border: 'none', cursor: 'pointer', marginTop: '4px'
+              }}
+            >
+              Voltar para mês atual
+            </button>
+          )}
+          {isCurrentMonth && (
+            <span style={{ fontSize: '12px', color: colors.textSecondary }}>Mês atual</span>
+          )}
+        </div>
+
+        <button
+          onClick={goToNextMonth}
+          style={{
+            padding: '8px', borderRadius: '8px', border: 'none',
+            backgroundColor: isDark ? colors.border : '#f3f4f6',
+            cursor: 'pointer', display: 'flex', alignItems: 'center'
+          }}
+        >
+          <ChevronRight size={20} color={colors.text} />
         </button>
       </div>
 
@@ -224,7 +309,12 @@ function Goals() {
             const typeConfig = getGoalType(goal.type)
             const Icon = typeConfig.icon
             const progress = goal.progress || 0
-            const isCompleted = goal.status === 'completed' || progress >= 100
+            const isExpenseLimit = goal.type === 'expense_limit'
+            // Para expense_limit: sucesso = gastou menos que o limite (progress <= 100)
+            const isCompleted = isExpenseLimit
+              ? (goal.status === 'completed' || (goal.isOnTrack && progress <= 100))
+              : (goal.status === 'completed' || progress >= 100)
+            const isOverBudget = isExpenseLimit && progress > 100
 
             return (
               <div
@@ -232,8 +322,8 @@ function Goals() {
                 style={{
                   backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px',
                   border: `1px solid ${colors.border}`,
-                  borderTop: `4px solid ${goal.color || typeConfig.color}`,
-                  opacity: isCompleted ? 0.8 : 1
+                  borderTop: `4px solid ${isOverBudget ? '#ef4444' : (goal.color || typeConfig.color)}`,
+                  opacity: isCompleted && !isExpenseLimit ? 0.8 : 1
                 }}
               >
                 {/* Header */}
@@ -241,19 +331,25 @@ function Goals() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
                       width: '44px', height: '44px', borderRadius: '10px',
-                      backgroundColor: `${goal.color || typeConfig.color}20`,
+                      backgroundColor: isOverBudget ? 'rgba(239,68,68,0.2)' : `${goal.color || typeConfig.color}20`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
-                      <Icon size={22} color={goal.color || typeConfig.color} />
+                      <Icon size={22} color={isOverBudget ? '#ef4444' : (goal.color || typeConfig.color)} />
                     </div>
                     <div>
                       <h3 style={{ fontWeight: '600', color: colors.text }}>{goal.name}</h3>
                       <span style={{
                         fontSize: '11px', padding: '2px 8px', borderRadius: '10px',
-                        backgroundColor: isCompleted ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7') : (isDark ? colors.border : '#f3f4f6'),
-                        color: isCompleted ? '#16a34a' : colors.textSecondary
+                        backgroundColor: isExpenseLimit
+                          ? (goal.isOnTrack ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7') : (isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2'))
+                          : (isCompleted ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7') : (isDark ? colors.border : '#f3f4f6')),
+                        color: isExpenseLimit
+                          ? (goal.isOnTrack ? '#16a34a' : '#ef4444')
+                          : (isCompleted ? '#16a34a' : colors.textSecondary)
                       }}>
-                        {isCompleted ? 'Concluída' : typeConfig.label}
+                        {isExpenseLimit
+                          ? (goal.isOnTrack ? 'Dentro do limite' : 'Acima do limite')
+                          : (isCompleted ? 'Concluída' : typeConfig.label)}
                       </span>
                     </div>
                   </div>
@@ -276,11 +372,11 @@ function Goals() {
                 {/* Valores */}
                 <div style={{ marginBottom: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '24px', fontWeight: '700', color: goal.color || typeConfig.color }}>
+                    <span style={{ fontSize: '24px', fontWeight: '700', color: isOverBudget ? '#ef4444' : (goal.color || typeConfig.color) }}>
                       {formatCurrency(goal.currentAmount)}
                     </span>
                     <span style={{ fontSize: '14px', color: colors.textSecondary }}>
-                      de {formatCurrency(goal.targetAmount)}
+                      {isExpenseLimit ? 'limite' : 'de'} {formatCurrency(goal.targetAmount)}
                     </span>
                   </div>
 
@@ -288,22 +384,41 @@ function Goals() {
                   <div style={{ height: '10px', backgroundColor: isDark ? colors.border : '#f3f4f6', borderRadius: '5px', overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', width: `${Math.min(progress, 100)}%`,
-                      backgroundColor: goal.color || typeConfig.color,
+                      backgroundColor: isOverBudget ? '#ef4444' : (goal.color || typeConfig.color),
                       borderRadius: '5px', transition: 'width 0.3s ease'
                     }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
                     <span style={{ fontSize: '12px', color: colors.textSecondary }}>
-                      Falta: {formatCurrency(goal.remaining)}
+                      {isExpenseLimit
+                        ? (goal.remaining > 0 ? `Disponível: ${formatCurrency(goal.remaining)}` : `Excedeu: ${formatCurrency(goal.currentAmount - goal.targetAmount)}`)
+                        : `Falta: ${formatCurrency(goal.remaining)}`}
                     </span>
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: goal.color || typeConfig.color }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: isOverBudget ? '#ef4444' : (goal.color || typeConfig.color) }}>
                       {progress.toFixed(0)}%
                     </span>
                   </div>
                 </div>
 
-                {/* Prazo */}
-                {goal.deadline && (
+                {/* Info do mês para expense_limit */}
+                {isExpenseLimit && goal.calculatedMonth && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    fontSize: '12px', color: colors.textSecondary, marginBottom: '12px',
+                    padding: '8px 12px', backgroundColor: isDark ? colors.border : '#f3f4f6', borderRadius: '6px'
+                  }}>
+                    <Calendar size={14} />
+                    <span>
+                      Gastos de {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][goal.calculatedMonth - 1]}/{goal.calculatedYear}
+                      {' '}<span style={{ color: goal.isOnTrack ? '#16a34a' : '#ef4444', fontWeight: '500' }}>
+                        (calculado automaticamente)
+                      </span>
+                    </span>
+                  </div>
+                )}
+
+                {/* Prazo para outros tipos */}
+                {!isExpenseLimit && goal.deadline && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: colors.textSecondary, marginBottom: '12px' }}>
                     <Calendar size={14} />
                     <span>
@@ -317,8 +432,26 @@ function Goals() {
                   </div>
                 )}
 
-                {/* Botão de depósito */}
-                {!isCompleted && (
+                {/* Status message para expense_limit */}
+                {isExpenseLimit && goal.statusMessage && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    padding: '10px',
+                    backgroundColor: goal.isOnTrack
+                      ? (isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7')
+                      : (isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2'),
+                    borderRadius: '8px',
+                    color: goal.isOnTrack ? '#16a34a' : '#ef4444',
+                    fontWeight: '500',
+                    fontSize: '13px'
+                  }}>
+                    {goal.isOnTrack ? <Check size={16} /> : <TrendingDown size={16} />}
+                    {goal.statusMessage}
+                  </div>
+                )}
+
+                {/* Botão de depósito - só para tipos que não são expense_limit */}
+                {!isCompleted && !isExpenseLimit && (
                   <button
                     onClick={() => { setSelectedGoal(goal); setShowDepositModal(true) }}
                     style={{
@@ -335,7 +468,7 @@ function Goals() {
                   </button>
                 )}
 
-                {isCompleted && (
+                {isCompleted && !isExpenseLimit && (
                   <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     padding: '10px', backgroundColor: isDark ? 'rgba(34,197,94,0.2)' : '#dcfce7', borderRadius: '8px', color: '#16a34a', fontWeight: '500'
@@ -417,10 +550,10 @@ function Goals() {
               </div>
 
               {/* Valores */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: form.type === 'expense_limit' ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
-                    Valor Alvo (R$)
+                    {form.type === 'expense_limit' ? 'Limite de Gastos (R$)' : 'Valor Alvo (R$)'}
                   </label>
                   <input
                     type="number"
@@ -431,20 +564,27 @@ function Goals() {
                     required
                     style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px', boxSizing: 'border-box' }}
                   />
+                  {form.type === 'expense_limit' && (
+                    <p style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '4px' }}>
+                      O valor gasto será calculado automaticamente baseado nas transações do mês
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
-                    Valor Atual (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.currentAmount}
-                    onChange={(e) => setForm({ ...form, currentAmount: e.target.value })}
-                    placeholder="0,00"
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px', boxSizing: 'border-box' }}
-                  />
-                </div>
+                {form.type !== 'expense_limit' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                      Valor Atual (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.currentAmount}
+                      onChange={(e) => setForm({ ...form, currentAmount: e.target.value })}
+                      placeholder="0,00"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text, fontSize: '14px', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Prazo */}

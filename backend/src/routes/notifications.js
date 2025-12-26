@@ -2,7 +2,6 @@ const express = require('express')
 const router = express.Router()
 const Notification = require('../models/Notification')
 const { protect } = require('../middleware/auth')
-const { generateSmartNotifications, generateDailySummary } = require('../services/smartNotifications')
 
 router.use(protect)
 
@@ -27,34 +26,6 @@ router.get('/', async (req, res) => {
     res.json({ notifications, unreadCount })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar notificações', error: error.message })
-  }
-})
-
-// @route   POST /api/notifications/generate
-// @desc    Gerar notificações inteligentes
-router.post('/generate', async (req, res) => {
-  try {
-    const results = await generateSmartNotifications(req.user._id)
-    res.json({
-      message: 'Notificações geradas com sucesso',
-      generated: results
-    })
-  } catch (error) {
-    res.status(500).json({ message: 'Erro ao gerar notificações', error: error.message })
-  }
-})
-
-// @route   POST /api/notifications/daily-summary
-// @desc    Gerar resumo diário
-router.post('/daily-summary', async (req, res) => {
-  try {
-    const summary = await generateDailySummary(req.user._id)
-    res.json({
-      message: 'Resumo diário gerado',
-      summary
-    })
-  } catch (error) {
-    res.status(500).json({ message: 'Erro ao gerar resumo', error: error.message })
   }
 })
 

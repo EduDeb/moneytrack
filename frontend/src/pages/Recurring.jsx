@@ -4,7 +4,8 @@ import api from '../services/api'
 import { ThemeContext } from '../contexts/ThemeContext'
 import {
   RefreshCw, Plus, Edit2, Trash2, Calendar, ArrowUpCircle, ArrowDownCircle,
-  Play, Pause, AlertCircle, CheckCircle, Clock, CreditCard, ChevronRight, Wallet
+  Play, Pause, AlertCircle, CheckCircle, Clock, CreditCard, ChevronRight, Wallet,
+  CheckSquare, Square, XCircle, Check, Loader
 } from 'lucide-react'
 
 const frequencyLabels = {
@@ -27,6 +28,11 @@ export default function Recurring() {
   const [showInstallmentModal, setShowInstallmentModal] = useState(false)
   const [activeTab, setActiveTab] = useState('all') // 'all', 'upcoming', 'installments'
   const [editingItem, setEditingItem] = useState(null)
+
+  // Seleção múltipla
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedItems, setSelectedItems] = useState([])
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     type: 'expense',
@@ -221,6 +227,105 @@ export default function Recurring() {
   const installments = recurrences.filter(r => r.isInstallment)
   const regularRecurrences = recurrences.filter(r => !r.isInstallment)
 
+  // Funções de seleção múltipla
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode)
+    setSelectedItems([])
+  }
+
+  const getCurrentList = () => {
+    return activeTab === 'installments' ? installments : regularRecurrences
+  }
+
+  const toggleItemSelection = (id) => {
+    setSelectedItems(prev =>
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
+    )
+  }
+
+  const selectAllItems = () => {
+    const currentList = getCurrentList()
+    if (selectedItems.length === currentList.length) {
+      setSelectedItems([])
+    } else {
+      setSelectedItems(currentList.map(r => r._id))
+    }
+  }
+
+  // Excluir todas selecionadas
+  const handleDeleteSelected = async () => {
+    if (selectedItems.length === 0) return
+
+    if (!confirm(`Tem certeza que deseja excluir ${selectedItems.length} recorrência(s)?`)) return
+
+    setIsProcessingBatch(true)
+    let successCount = 0
+    let errorCount = 0
+
+    for (const id of selectedItems) {
+      try {
+        await api.delete(`/recurring/${id}`)
+        successCount++
+      } catch (error) {
+        console.error(`Erro ao excluir recorrência:`, error)
+        errorCount++
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    fetchData()
+
+    if (errorCount > 0) {
+      alert(`${successCount} recorrência(s) excluída(s). ${errorCount} erro(s).`)
+    }
+  }
+
+  // Pausar todas selecionadas
+  const handlePauseSelected = async () => {
+    if (selectedItems.length === 0) return
+
+    if (!confirm(`Deseja pausar ${selectedItems.length} recorrência(s)?`)) return
+
+    setIsProcessingBatch(true)
+    for (const id of selectedItems) {
+      try {
+        await api.put(`/recurring/${id}`, { isActive: false })
+      } catch (error) {
+        console.error(`Erro ao pausar:`, error)
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    fetchData()
+  }
+
+  // Ativar todas selecionadas
+  const handleActivateSelected = async () => {
+    if (selectedItems.length === 0) return
+
+    if (!confirm(`Deseja ativar ${selectedItems.length} recorrência(s)?`)) return
+
+    setIsProcessingBatch(true)
+    for (const id of selectedItems) {
+      try {
+        await api.put(`/recurring/${id}`, { isActive: true })
+      } catch (error) {
+        console.error(`Erro ao ativar:`, error)
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    fetchData()
+  }
+
   if (loading) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -250,6 +355,25 @@ export default function Recurring() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {/* Botão de seleção múltipla */}
+          <button
+            onClick={toggleSelectionMode}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem 1rem',
+              border: `1px solid ${selectionMode ? '#3b82f6' : '#e2e8f0'}`,
+              borderRadius: '0.5rem',
+              background: selectionMode ? '#3b82f6' : '#fff',
+              color: selectionMode ? '#fff' : '#64748b',
+              cursor: 'pointer',
+              fontWeight: '500'
+            }}
+          >
+            {selectionMode ? <XCircle size={18} /> : <CheckSquare size={18} />}
+            {selectionMode ? 'Cancelar' : 'Selecionar'}
+          </button>
           <button
             onClick={() => setShowInstallmentModal(true)}
             style={{
@@ -288,6 +412,110 @@ export default function Recurring() {
           </button>
         </div>
       </div>
+
+      {/* Barra de ações de seleção múltipla */}
+      {selectionMode && (activeTab === 'all' || activeTab === 'installments') && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          marginBottom: '1rem',
+          padding: '0.75rem 1rem',
+          backgroundColor: '#eff6ff',
+          borderRadius: '0.5rem',
+          border: '1px solid #3b82f6',
+          flexWrap: 'wrap'
+        }}>
+          <button
+            onClick={selectAllItems}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.375rem 0.75rem',
+              borderRadius: '0.375rem',
+              border: '1px solid #e2e8f0',
+              backgroundColor: '#fff',
+              color: '#1e293b',
+              fontWeight: '500',
+              cursor: 'pointer',
+              fontSize: '0.8125rem'
+            }}
+          >
+            {selectedItems.length === getCurrentList().length ? <Square size={14} /> : <CheckSquare size={14} />}
+            {selectedItems.length === getCurrentList().length ? 'Desmarcar Todas' : 'Selecionar Todas'}
+          </button>
+
+          <span style={{ color: '#1e293b', fontSize: '0.8125rem', fontWeight: '500' }}>
+            {selectedItems.length} selecionada(s)
+          </span>
+
+          <div style={{ flex: 1 }} />
+
+          <button
+            onClick={handleActivateSelected}
+            disabled={selectedItems.length === 0 || isProcessingBatch}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#22c55e',
+              color: 'white',
+              fontWeight: '500',
+              cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '0.8125rem'
+            }}
+          >
+            <Play size={14} />
+            Ativar
+          </button>
+
+          <button
+            onClick={handlePauseSelected}
+            disabled={selectedItems.length === 0 || isProcessingBatch}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#f59e0b',
+              color: 'white',
+              fontWeight: '500',
+              cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '0.8125rem'
+            }}
+          >
+            <Pause size={14} />
+            Pausar
+          </button>
+
+          <button
+            onClick={handleDeleteSelected}
+            disabled={selectedItems.length === 0 || isProcessingBatch}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#ef4444',
+              color: 'white',
+              fontWeight: '500',
+              cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '0.8125rem'
+            }}
+          >
+            {isProcessingBatch ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={14} />}
+            Excluir
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{
@@ -457,6 +685,21 @@ export default function Recurring() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
+                {selectionMode && (
+                  <th style={{ padding: '1rem', textAlign: 'center', width: '50px' }}>
+                    <div
+                      onClick={selectAllItems}
+                      style={{
+                        width: '20px', height: '20px', borderRadius: '4px', cursor: 'pointer',
+                        border: `2px solid ${selectedItems.length === getCurrentList().length ? '#3b82f6' : '#e2e8f0'}`,
+                        backgroundColor: selectedItems.length === getCurrentList().length ? '#3b82f6' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+                      }}
+                    >
+                      {selectedItems.length === getCurrentList().length && <Check size={12} color="white" />}
+                    </div>
+                  </th>
+                )}
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600', fontSize: '0.875rem', color: '#64748b' }}>
                   Nome
                 </th>
@@ -475,20 +718,40 @@ export default function Recurring() {
                 <th style={{ padding: '1rem', textAlign: 'center', fontWeight: '600', fontSize: '0.875rem', color: '#64748b' }}>
                   Status
                 </th>
+                {!selectionMode && (
                 <th style={{ padding: '1rem', textAlign: 'center', fontWeight: '600', fontSize: '0.875rem', color: '#64748b' }}>
                   Ações
                 </th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {(activeTab === 'installments' ? installments : regularRecurrences).map((item, index) => (
+              {(activeTab === 'installments' ? installments : regularRecurrences).map((item, index) => {
+                const isSelected = selectedItems.includes(item._id)
+                return (
                 <tr
                   key={item._id}
+                  onClick={selectionMode ? () => toggleItemSelection(item._id) : undefined}
                   style={{
                     borderTop: index > 0 ? '1px solid #e2e8f0' : 'none',
-                    opacity: item.isActive ? 1 : 0.5
+                    opacity: item.isActive ? 1 : 0.5,
+                    backgroundColor: isSelected ? '#dbeafe' : 'transparent',
+                    cursor: selectionMode ? 'pointer' : 'default',
+                    transition: 'background-color 0.2s'
                   }}
                 >
+                  {selectionMode && (
+                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                      <div style={{
+                        width: '20px', height: '20px', borderRadius: '4px',
+                        border: `2px solid ${isSelected ? '#3b82f6' : '#e2e8f0'}`,
+                        backgroundColor: isSelected ? '#3b82f6' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+                      }}>
+                        {isSelected && <Check size={12} color="white" />}
+                      </div>
+                    </td>
+                  )}
                   <td style={{ padding: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <div style={{
@@ -562,11 +825,12 @@ export default function Recurring() {
                       {item.isActive ? 'Ativo' : 'Pausado'}
                     </button>
                   </td>
+                  {!selectionMode && (
                   <td style={{ padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem' }}>
                       {item.isActive && (
                         <button
-                          onClick={() => handleGenerate(item._id)}
+                          onClick={(e) => { e.stopPropagation(); handleGenerate(item._id) }}
                           title="Gerar transação"
                           style={{
                             padding: '0.5rem',
@@ -580,7 +844,7 @@ export default function Recurring() {
                         </button>
                       )}
                       <button
-                        onClick={() => openEditModal(item)}
+                        onClick={(e) => { e.stopPropagation(); openEditModal(item) }}
                         style={{
                           padding: '0.5rem',
                           border: 'none',
@@ -591,7 +855,7 @@ export default function Recurring() {
                         <Edit2 size={16} style={{ color: '#64748b' }} />
                       </button>
                       <button
-                        onClick={() => handleDelete(item._id)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item._id) }}
                         style={{
                           padding: '0.5rem',
                           border: 'none',
@@ -603,8 +867,10 @@ export default function Recurring() {
                       </button>
                     </div>
                   </td>
+                  )}
                 </tr>
-              ))}
+              )
+              })}
             </tbody>
           </table>
 

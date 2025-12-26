@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { capitalize } = require('../utils/stringHelper');
 
 const investmentSchema = new mongoose.Schema({
   user: {
@@ -72,5 +73,10 @@ investmentSchema.set('toJSON', { virtuals: true });
 investmentSchema.index({ user: 1 });
 investmentSchema.index({ user: 1, type: 1 });
 investmentSchema.index({ user: 1, ticker: 1 });
+
+// Capitalizar automaticamente nome (usando setter)
+investmentSchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v;
+});
 
 module.exports = mongoose.model('Investment', investmentSchema);

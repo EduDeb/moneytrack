@@ -1,144 +1,127 @@
-/**
- * Script para Corrigir Categorias
- * Baseado na análise de dezembro/2025 como referência
- */
+const mongoose = require('mongoose')
+require('dotenv').config()
 
-const mongoose = require('mongoose');
-require('dotenv').config();
+const MONGODB_URI = process.env.MONGODB_URI
 
+// Schema simplificado
 const transactionSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  user: mongoose.Schema.Types.ObjectId,
   type: String,
   category: String,
   description: String,
   amount: Number,
-  date: Date,
-  account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
-  tags: [String]
-}, { timestamps: true });
+  date: Date
+}, { collection: 'transactions' })
 
-const Transaction = mongoose.model('Transaction', transactionSchema);
+const Transaction = mongoose.model('Transaction', transactionSchema)
 
-async function fixCategories() {
-  try {
-    console.log('🔌 Conectando ao MongoDB...');
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ Conectado!\n');
-
-    // Carregar relatório de análise
-    const fs = require('fs');
-    const report = JSON.parse(
-      fs.readFileSync('/Users/eduardobarreira/Desktop/finance-app/backend/scripts/full-analysis-report.json', 'utf8')
-    );
-
-    const { inconsistencies } = report;
-
-    console.log('═'.repeat(70));
-    console.log('🔧 EXECUTANDO CORREÇÕES DE CATEGORIAS');
-    console.log('═'.repeat(70));
-    console.log(`Total de correções a fazer: ${inconsistencies.length}\n`);
-
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const item of inconsistencies) {
-      try {
-        const result = await Transaction.findByIdAndUpdate(
-          item._id,
-          { category: item.expectedCategory },
-          { new: true }
-        );
-
-        if (result) {
-          const d = new Date(item.date);
-          console.log(`✅ "${item.description}" (${d.toLocaleDateString('pt-BR')})`);
-          console.log(`   ${item.currentCategory} → ${item.expectedCategory}`);
-          successCount++;
-        } else {
-          console.log(`⚠️  Transação não encontrada: ${item._id}`);
-          errorCount++;
-        }
-      } catch (err) {
-        console.log(`❌ Erro ao atualizar ${item._id}: ${err.message}`);
-        errorCount++;
-      }
-    }
-
-    console.log('\n' + '═'.repeat(70));
-    console.log('📊 RESULTADO DAS CORREÇÕES');
-    console.log('═'.repeat(70));
-    console.log(`  ✅ Corrigidas com sucesso: ${successCount}`);
-    console.log(`  ❌ Erros: ${errorCount}`);
-    console.log(`  📊 Total processado: ${successCount + errorCount}`);
-
-    // Validação: verificar se as correções foram aplicadas
-    console.log('\n' + '═'.repeat(70));
-    console.log('🔍 VALIDAÇÃO PÓS-CORREÇÃO');
-    console.log('═'.repeat(70));
-
-    // Recarregar transações e verificar
-    const decemberTransactions = await Transaction.find({
-      date: {
-        $gte: new Date(2025, 11, 1), // Dezembro 2025
-        $lt: new Date(2026, 0, 1)    // Janeiro 2026
-      }
-    });
-
-    const categoryMap = {};
-    decemberTransactions.forEach(t => {
-      const descNormalized = t.description.toLowerCase().trim();
-      categoryMap[descNormalized] = t.category;
-    });
-
-    const previousMonths = await Transaction.find({
-      date: { $lt: new Date(2025, 11, 1) }
-    });
-
-    let stillInconsistent = 0;
-    previousMonths.forEach(t => {
-      const descNormalized = t.description.toLowerCase().trim();
-      const expectedCategory = categoryMap[descNormalized];
-      if (expectedCategory && t.category !== expectedCategory) {
-        stillInconsistent++;
-        console.log(`⚠️  Ainda inconsistente: "${t.description}" - ${t.category} (deveria ser ${expectedCategory})`);
-      }
-    });
-
-    if (stillInconsistent === 0) {
-      console.log('✅ Todas as categorias estão agora consistentes com dezembro/2025!');
-    } else {
-      console.log(`\n⚠️  ${stillInconsistent} transações ainda inconsistentes`);
-    }
-
-    // Estatísticas finais por categoria
-    console.log('\n' + '═'.repeat(70));
-    console.log('📊 DISTRIBUIÇÃO FINAL POR CATEGORIA');
-    console.log('═'.repeat(70));
-
-    const allTransactions = await Transaction.find({});
-    const byCategoryFinal = {};
-    allTransactions.forEach(t => {
-      if (!byCategoryFinal[t.category]) {
-        byCategoryFinal[t.category] = { count: 0, total: 0 };
-      }
-      byCategoryFinal[t.category].count++;
-      byCategoryFinal[t.category].total += t.amount;
-    });
-
-    Object.keys(byCategoryFinal).sort().forEach(cat => {
-      const data = byCategoryFinal[cat];
-      console.log(`  ${cat}: ${data.count} transações | Total: R$ ${data.total.toFixed(2)}`);
-    });
-
-    await mongoose.disconnect();
-    console.log('\n🔌 Desconectado do MongoDB');
-    console.log('\n✅ CORREÇÕES FINALIZADAS COM SUCESSO!');
-
-  } catch (error) {
-    console.error('❌ Erro:', error.message);
-    await mongoose.disconnect();
-    process.exit(1);
-  }
+// Mapeamento de categorias (de -> para)
+const CATEGORY_MAP = {
+  'bernardo': 'Bernardo',
+  'saude': 'Saúde',
+  'colaboradores': 'Colaboradores',
+  'educacao': 'Educação',
+  'outros_despesa': 'Outros',
+  'transporte': 'Colaboradores',
+  'imposto': 'Outros',
+  'pets': 'Outros',
+  'lazer': 'Lazer',
+  'mercado': 'Mercado',
+  'moradia': 'Moradia',
+  'alimentacao': 'Alimentação',
+  'alimentação': 'Alimentação',
+  'receita': 'Receita',
+  'salario': 'Receita'
 }
 
-fixCategories();
+// Mapeamento de descrições (de -> para)
+const DESCRIPTION_MAP = {
+  'caem': 'Camed',
+  'camed': 'Camed',
+  'CAMED': 'Camed',
+  'telnet': 'Texnet ( INTERNET )',
+  'Telnet': 'Texnet ( INTERNET )',
+  'Escola Bernardo': 'Colegio Bernardo',
+  'escola bernardo': 'Colegio Bernardo',
+  'Escola bernardo': 'Colegio Bernardo'
+}
+
+async function main() {
+  await mongoose.connect(MONGODB_URI)
+  console.log('Conectado ao MongoDB')
+
+  // Buscar o usuário Eduardo
+  const userSchema = new mongoose.Schema({}, { collection: 'users', strict: false })
+  const User = mongoose.model('User', userSchema)
+  const user = await User.findOne({ email: 'arqdeboraso@gmail.com' })
+
+  if (!user) {
+    console.log('Nenhum usuário encontrado')
+    process.exit(1)
+  }
+
+  console.log('Usuário:', user.email)
+  console.log('ID:', user._id)
+  console.log('\n')
+
+  // Períodos de Out e Nov 2025
+  const oct2025Start = new Date(Date.UTC(2025, 9, 1))
+  const nov2025End = new Date(Date.UTC(2025, 10, 30, 23, 59, 59))
+
+  // Buscar transações de Outubro e Novembro
+  const transactions = await Transaction.find({
+    user: user._id,
+    date: { $gte: oct2025Start, $lte: nov2025End }
+  })
+
+  console.log('Total de transações para processar:', transactions.length, '\n')
+
+  let categoryUpdates = 0
+  let descriptionUpdates = 0
+  let errors = []
+
+  for (const t of transactions) {
+    const updates = {}
+
+    // 1. Verificar categoria
+    const categoryLower = t.category.toLowerCase()
+    if (CATEGORY_MAP[categoryLower] && t.category !== CATEGORY_MAP[categoryLower]) {
+      updates.category = CATEGORY_MAP[categoryLower]
+      console.log('[CAT] ' + t.description + ': "' + t.category + '" -> "' + updates.category + '"')
+      categoryUpdates++
+    }
+
+    // 2. Verificar descrição
+    const descriptionLower = t.description.toLowerCase()
+    for (const [oldDesc, newDesc] of Object.entries(DESCRIPTION_MAP)) {
+      if (descriptionLower === oldDesc.toLowerCase() && t.description !== newDesc) {
+        updates.description = newDesc
+        console.log('[DESC] "' + t.description + '" -> "' + updates.description + '"')
+        descriptionUpdates++
+        break
+      }
+    }
+
+    // 3. Aplicar atualizações se houver
+    if (Object.keys(updates).length > 0) {
+      try {
+        await Transaction.updateOne({ _id: t._id }, { $set: updates })
+      } catch (err) {
+        errors.push({ id: t._id, error: err.message })
+      }
+    }
+  }
+
+  console.log('\n=== RESUMO ===')
+  console.log('Categorias atualizadas:', categoryUpdates)
+  console.log('Descrições atualizadas:', descriptionUpdates)
+  if (errors.length > 0) {
+    console.log('Erros:', errors.length)
+    errors.forEach(e => console.log('  - ' + e.id + ': ' + e.error))
+  }
+
+  await mongoose.disconnect()
+  console.log('\nDesconectado do MongoDB')
+}
+
+main().catch(console.error)

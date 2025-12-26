@@ -21,9 +21,10 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password })
-    const { token, ...userData } = response.data
+    const { token, refreshToken, ...userData } = response.data
 
     localStorage.setItem('token', token)
+    localStorage.setItem('refreshToken', refreshToken)
     localStorage.setItem('user', JSON.stringify(userData))
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
@@ -33,9 +34,10 @@ export function AuthProvider({ children }) {
 
   const register = async (name, email, password) => {
     const response = await api.post('/auth/register', { name, email, password })
-    const { token, ...userData } = response.data
+    const { token, refreshToken, ...userData } = response.data
 
     localStorage.setItem('token', token)
+    localStorage.setItem('refreshToken', refreshToken)
     localStorage.setItem('user', JSON.stringify(userData))
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`
 

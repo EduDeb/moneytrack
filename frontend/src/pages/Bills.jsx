@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext, useRef, useMemo } from 'react'
 import api from '../services/api'
-import { Plus, Trash2, Edit2, X, Check, Home, Zap, Droplets, Wifi, Phone, Tv, Shield, CreditCard, Banknote, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Check, Home, Zap, Droplets, Wifi, Phone, Tv, Shield, CreditCard, Banknote, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import MonthSelector from '../components/MonthSelector'
 import SortToggle from '../components/SortToggle'
@@ -28,6 +28,11 @@ const urgencyColors = {
   paid: { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a', label: 'Paga' }
 }
 
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+]
+
 function Bills() {
   const { colors, isDark } = useContext(ThemeContext)
   const now = new Date()
@@ -40,6 +45,11 @@ function Bills() {
   const [editingBill, setEditingBill] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('asc') // 'asc' = vencimento próximo, 'desc' = vencimento distante
+
+  // Seleção múltipla
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedItems, setSelectedItems] = useState([])
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
@@ -60,6 +70,18 @@ function Bills() {
   const [importText, setImportText] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Modal de ações da conta
+  const [showActionModal, setShowActionModal] = useState(false)
+  const [selectedBill, setSelectedBill] = useState(null)
+  const [actionType, setActionType] = useState(null) // 'discount', 'partial', 'skip'
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [partialAmount, setPartialAmount] = useState('')
+  const [actionNotes, setActionNotes] = useState('')
+  const [isProcessingAction, setIsProcessingAction] = useState(false)
+
+  // Modal de exclusão (para escolher: só este mês ou todos)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   const handleMonthChange = (month, year) => {
     setSelectedMonth(month)
@@ -161,8 +183,8 @@ function Bills() {
       setShowModal(false)
       setEditingBill(null)
       resetForm()
-      fetchBills()
-      fetchSummary()
+      await fetchBills()
+      await fetchSummary()
     } catch (error) {
       console.error('Erro ao salvar conta:', error)
     }
@@ -176,8 +198,8 @@ function Bills() {
         month: selectedMonth,
         year: selectedYear
       })
-      fetchBills()
-      fetchSummary()
+      await fetchBills()
+      await fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
       alert(error.response?.data?.message || 'Erro ao pagar conta')
@@ -185,19 +207,153 @@ function Bills() {
   }
 
   const handleDelete = async (bill) => {
-    const confirmMsg = bill.isFromRecurring
-      ? 'Tem certeza que deseja excluir esta conta recorrente? Ela será removida de todos os meses.'
-      : 'Tem certeza que deseja excluir esta conta?'
+    // Para contas recorrentes, abrir modal de opções
+    if (bill.isFromRecurring) {
+      setSelectedBill(bill)
+      setShowDeleteModal(true)
+      return
+    }
 
-    if (!confirm(confirmMsg)) return
+    // Para contas não-recorrentes, excluir diretamente
+    if (!confirm('Tem certeza que deseja excluir esta conta?')) return
     try {
-      // Usar endpoint correto baseado na origem do item
-      const endpoint = bill.isFromRecurring ? `/recurring/${bill._id}` : `/bills/${bill._id}`
-      await api.delete(endpoint)
-      fetchBills()
-      fetchSummary()
+      await api.delete(`/bills/${bill._id}`)
+      await fetchBills()
+      await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir conta:', error)
+    }
+  }
+
+  // Excluir apenas deste mês (usar skip)
+  const handleDeleteThisMonth = async () => {
+    if (!selectedBill) return
+    try {
+      await api.post(`/bills/${selectedBill._id}/skip`, {
+        month: selectedMonth,
+        year: selectedYear,
+        notes: 'Excluído deste mês'
+      })
+      setShowDeleteModal(false)
+      setSelectedBill(null)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao excluir deste mês:', error)
+      alert(error.response?.data?.message || 'Erro ao excluir')
+    }
+  }
+
+  // Excluir de todos os meses (deletar recorrência)
+  const handleDeleteAllMonths = async () => {
+    if (!selectedBill) return
+    if (!confirm('ATENÇÃO: Isso vai excluir esta conta de TODOS os meses futuros. Continuar?')) return
+    try {
+      await api.delete(`/recurring/${selectedBill._id}`)
+      setShowDeleteModal(false)
+      setSelectedBill(null)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao excluir recorrência:', error)
+      alert(error.response?.data?.message || 'Erro ao excluir')
+    }
+  }
+
+  // Abrir modal de ações
+  const openActionModal = (bill) => {
+    setSelectedBill(bill)
+    setActionType(null)
+    setDiscountAmount('')
+    setPartialAmount('')
+    setActionNotes('')
+    setShowActionModal(true)
+  }
+
+  // Pular mês (skip) - não apaga a recorrência, só marca como pulada neste mês
+  const handleSkipMonth = async () => {
+    if (!selectedBill) return
+    setIsProcessingAction(true)
+    try {
+      await api.post(`/bills/${selectedBill._id}/skip`, {
+        month: selectedMonth,
+        year: selectedYear,
+        notes: actionNotes || 'Mês pulado'
+      })
+      setShowActionModal(false)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao pular mês:', error)
+      alert(error.response?.data?.message || 'Erro ao pular mês')
+    } finally {
+      setIsProcessingAction(false)
+    }
+  }
+
+  // Pagar com desconto
+  const handlePayWithDiscount = async () => {
+    if (!selectedBill || !discountAmount) return
+    setIsProcessingAction(true)
+    try {
+      await api.post(`/bills/${selectedBill._id}/pay-with-discount`, {
+        month: selectedMonth,
+        year: selectedYear,
+        discountAmount: parseFloat(discountAmount),
+        notes: actionNotes || `Desconto de R$ ${parseFloat(discountAmount).toFixed(2)}`
+      })
+      setShowActionModal(false)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao pagar com desconto:', error)
+      alert(error.response?.data?.message || 'Erro ao pagar com desconto')
+    } finally {
+      setIsProcessingAction(false)
+    }
+  }
+
+  // Pagamento parcial
+  const handlePartialPayment = async () => {
+    if (!selectedBill || !partialAmount) return
+    setIsProcessingAction(true)
+    try {
+      await api.post(`/bills/${selectedBill._id}/pay-partial`, {
+        month: selectedMonth,
+        year: selectedYear,
+        paidAmount: parseFloat(partialAmount),
+        notes: actionNotes
+      })
+      setShowActionModal(false)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao registrar pagamento parcial:', error)
+      alert(error.response?.data?.message || 'Erro ao registrar pagamento parcial')
+    } finally {
+      setIsProcessingAction(false)
+    }
+  }
+
+  // Desfazer override (restaurar valor original)
+  const handleUndoOverride = async () => {
+    if (!selectedBill) return
+    setIsProcessingAction(true)
+    try {
+      await api.delete(`/bills/${selectedBill._id}/override`, {
+        data: {
+          month: selectedMonth,
+          year: selectedYear
+        }
+      })
+      setShowActionModal(false)
+      await fetchBills()
+      await fetchSummary()
+    } catch (error) {
+      console.error('Erro ao desfazer alteração:', error)
+      alert(error.response?.data?.message || 'Erro ao desfazer alteração')
+    } finally {
+      setIsProcessingAction(false)
     }
   }
 
@@ -387,12 +543,128 @@ function Bills() {
       setImportStep('done')
 
       // Refresh bills list
-      fetchBills()
-      fetchSummary()
+      await fetchBills()
+      await fetchSummary()
     } catch (error) {
       console.error('Erro ao importar:', error)
       setImportError(error.response?.data?.message || 'Erro ao importar contas')
       setImportStep('preview')
+    }
+  }
+
+  // Funções de seleção múltipla
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode)
+    setSelectedItems([])
+  }
+
+  const toggleItemSelection = (billId) => {
+    setSelectedItems(prev =>
+      prev.includes(billId)
+        ? prev.filter(id => id !== billId)
+        : [...prev, billId]
+    )
+  }
+
+  const selectAllItems = () => {
+    const filteredBills = getFilteredBills()
+    if (selectedItems.length === filteredBills.length) {
+      setSelectedItems([])
+    } else {
+      setSelectedItems(filteredBills.map(b => b._id))
+    }
+  }
+
+  const getFilteredBills = () => {
+    let filtered = bills
+    if (filter === 'paid') {
+      filtered = bills.filter(b => b.isPaid)
+    } else if (filter === 'pending') {
+      filtered = bills.filter(b => !b.isPaid)
+    }
+    return [...filtered].sort((a, b) => sortOrder === 'asc' ? a.dueDay - b.dueDay : b.dueDay - a.dueDay)
+  }
+
+  // Pagar todas selecionadas
+  const handlePaySelected = async () => {
+    if (selectedItems.length === 0) return
+
+    const pendingBills = bills.filter(b => selectedItems.includes(b._id) && !b.isPaid)
+    if (pendingBills.length === 0) {
+      alert('Nenhuma conta pendente selecionada')
+      return
+    }
+
+    const total = pendingBills.reduce((sum, b) => sum + b.amount, 0)
+    if (!confirm(`Confirma pagamento de ${pendingBills.length} conta(s) no valor total de ${formatCurrency(total)}?`)) return
+
+    setIsProcessingBatch(true)
+    let successCount = 0
+    let errorCount = 0
+
+    for (const bill of pendingBills) {
+      try {
+        await api.post(`/bills/${bill._id}/pay`, {
+          isFromRecurring: bill.isFromRecurring || false,
+          month: selectedMonth,
+          year: selectedYear
+        })
+        successCount++
+      } catch (error) {
+        console.error(`Erro ao pagar ${bill.name}:`, error)
+        errorCount++
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    await fetchBills()
+    await fetchSummary()
+
+    if (errorCount > 0) {
+      alert(`${successCount} conta(s) paga(s) com sucesso. ${errorCount} erro(s).`)
+    }
+  }
+
+  // Cancelar pagamento (desfazer) - criar endpoint se necessário
+  const handleUnpaySelected = async () => {
+    if (selectedItems.length === 0) return
+
+    const paidBills = bills.filter(b => selectedItems.includes(b._id) && b.isPaid)
+    if (paidBills.length === 0) {
+      alert('Nenhuma conta paga selecionada')
+      return
+    }
+
+    if (!confirm(`Deseja cancelar o pagamento de ${paidBills.length} conta(s)?`)) return
+
+    setIsProcessingBatch(true)
+    let successCount = 0
+    let errorCount = 0
+
+    for (const bill of paidBills) {
+      try {
+        await api.post(`/bills/${bill._id}/unpay`, {
+          isFromRecurring: bill.isFromRecurring || false,
+          month: selectedMonth,
+          year: selectedYear
+        })
+        successCount++
+      } catch (error) {
+        console.error(`Erro ao cancelar pagamento de ${bill.name}:`, error)
+        errorCount++
+      }
+    }
+
+    setIsProcessingBatch(false)
+    setSelectedItems([])
+    setSelectionMode(false)
+    await fetchBills()
+    await fetchSummary()
+
+    if (errorCount > 0) {
+      alert(`${successCount} pagamento(s) cancelado(s). ${errorCount} erro(s).`)
     }
   }
 
@@ -466,35 +738,145 @@ function Bills() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {[
-          { value: 'all', label: 'Todas' },
-          { value: 'pending', label: 'Pendentes' },
-          { value: 'paid', label: 'Pagas' }
-        ].map(f => (
+      {/* Filtros e Seleção Múltipla */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {[
+            { value: 'all', label: 'Todas' },
+            { value: 'pending', label: 'Pendentes' },
+            { value: 'paid', label: 'Pagas' }
+          ].map(f => (
+            <button
+              key={f.value}
+              onClick={() => { setFilter(f.value); setSelectedItems([]) }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: 'none',
+                backgroundColor: filter === f.value ? '#3b82f6' : (isDark ? colors.border : '#e5e7eb'),
+                color: filter === f.value ? 'white' : colors.textSecondary,
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Botão de seleção múltipla */}
+        <button
+          onClick={toggleSelectionMode}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            border: `1px solid ${selectionMode ? '#3b82f6' : colors.border}`,
+            backgroundColor: selectionMode ? '#3b82f6' : 'transparent',
+            color: selectionMode ? 'white' : colors.textSecondary,
+            fontWeight: '500',
+            cursor: 'pointer',
+            fontSize: '13px'
+          }}
+        >
+          {selectionMode ? <XCircle size={16} /> : <CheckSquare size={16} />}
+          {selectionMode ? 'Cancelar' : 'Selecionar'}
+        </button>
+      </div>
+
+      {/* Barra de ações de seleção múltipla */}
+      {selectionMode && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          marginBottom: '16px',
+          padding: '12px 16px',
+          backgroundColor: isDark ? '#1e3a5f' : '#eff6ff',
+          borderRadius: '12px',
+          border: '1px solid #3b82f6',
+          flexWrap: 'wrap'
+        }}>
           <button
-            key={f.value}
-            onClick={() => setFilter(f.value)}
+            onClick={selectAllItems}
             style={{
-              padding: '8px 16px',
-              borderRadius: '20px',
-              border: 'none',
-              backgroundColor: filter === f.value ? '#3b82f6' : (isDark ? colors.border : '#e5e7eb'),
-              color: filter === f.value ? 'white' : colors.textSecondary,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: `1px solid ${colors.border}`,
+              backgroundColor: colors.backgroundCard,
+              color: colors.text,
               fontWeight: '500',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              fontSize: '13px'
             }}
           >
-            {f.label}
+            {selectedItems.length === getFilteredBills().length ? <Square size={16} /> : <CheckSquare size={16} />}
+            {selectedItems.length === getFilteredBills().length ? 'Desmarcar Todas' : 'Selecionar Todas'}
           </button>
-        ))}
-      </div>
+
+          <span style={{ color: colors.text, fontSize: '13px', fontWeight: '500' }}>
+            {selectedItems.length} selecionada(s)
+          </span>
+
+          <div style={{ flex: 1 }} />
+
+          {filter !== 'paid' && (
+            <button
+              onClick={handlePaySelected}
+              disabled={selectedItems.length === 0 || isProcessingBatch}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#22c55e',
+                color: 'white',
+                fontWeight: '500',
+                cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              {isProcessingBatch ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
+              Pagar Selecionadas
+            </button>
+          )}
+
+          {filter !== 'pending' && (
+            <button
+              onClick={handleUnpaySelected}
+              disabled={selectedItems.length === 0 || isProcessingBatch}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: selectedItems.length === 0 ? '#9ca3af' : '#f59e0b',
+                color: 'white',
+                fontWeight: '500',
+                cursor: selectedItems.length === 0 ? 'not-allowed' : 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              {isProcessingBatch ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <XCircle size={16} />}
+              Cancelar Pagamento
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Contador e Ordenação */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
-          {bills.length} conta(s) encontrada(s)
+          {getFilteredBills().length} conta(s) encontrada(s)
         </span>
         <SortToggle
           sortOrder={sortOrder}
@@ -506,31 +888,51 @@ function Bills() {
       {/* Lista de Contas */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary }}>Carregando...</div>
-      ) : bills.length === 0 ? (
+      ) : getFilteredBills().length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary, backgroundColor: colors.backgroundCard, borderRadius: '12px', border: `1px solid ${colors.border}` }}>
-          Nenhuma conta cadastrada
+          {filter === 'all' ? 'Nenhuma conta cadastrada' : filter === 'paid' ? 'Nenhuma conta paga este mês' : 'Nenhuma conta pendente'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {[...bills].sort((a, b) => sortOrder === 'asc' ? a.dueDay - b.dueDay : b.dueDay - a.dueDay).map((bill) => {
+          {getFilteredBills().map((bill) => {
             const cat = categoryConfig[bill.category] || categoryConfig.outros
             const urgency = getUrgencyColors(bill.urgency)
             const Icon = cat.icon
+            const isSelected = selectedItems.includes(bill._id)
 
             return (
               <div
                 key={bill._id}
+                onClick={selectionMode ? () => toggleItemSelection(bill._id) : undefined}
                 style={{
-                  backgroundColor: urgency.bg,
+                  backgroundColor: isSelected ? (isDark ? '#1e3a5f' : '#dbeafe') : urgency.bg,
                   borderRadius: '12px',
                   padding: '16px',
-                  borderLeft: `4px solid ${urgency.border}`,
+                  borderLeft: `4px solid ${isSelected ? '#3b82f6' : urgency.border}`,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '16px',
-                  flexWrap: 'wrap'
+                  flexWrap: 'wrap',
+                  cursor: selectionMode ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease'
                 }}
               >
+                {/* Checkbox de seleção */}
+                {selectionMode && (
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    border: `2px solid ${isSelected ? '#3b82f6' : colors.border}`,
+                    backgroundColor: isSelected ? '#3b82f6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {isSelected && <Check size={14} color="white" />}
+                  </div>
+                )}
+
                 {/* Ícone */}
                 <div style={{
                   width: '44px',
@@ -587,32 +989,63 @@ function Bills() {
                   <p style={{ fontSize: '18px', fontWeight: '700', color: bill.isPaid ? '#22c55e' : colors.text }}>
                     {formatCurrency(bill.amount)}
                   </p>
+                  {/* Mostrar info de pagamento parcial */}
+                  {bill.isPartialPayment && bill.paidAmount > 0 && (
+                    <p style={{ fontSize: '11px', color: '#f59e0b', marginTop: '2px' }}>
+                      Pago: {formatCurrency(bill.paidAmount)}
+                    </p>
+                  )}
+                  {/* Mostrar se tem desconto aplicado */}
+                  {bill.hasOverride && bill.overrideType === 'custom_amount' && bill.originalAmount !== bill.amount && (
+                    <p style={{ fontSize: '11px', color: '#22c55e', marginTop: '2px', textDecoration: 'line-through' }}>
+                      {formatCurrency(bill.originalAmount)}
+                    </p>
+                  )}
                 </div>
 
-                {/* Ações */}
+                {/* Ações - ocultar quando em modo de seleção */}
+                {!selectionMode && (
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {!bill.isPaid && (
-                    <button
-                      onClick={() => handlePay(bill)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '8px',
-                        backgroundColor: '#22c55e',
-                        color: 'white',
-                        border: 'none',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Check size={16} />
-                      Pagar
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePay(bill) }}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          backgroundColor: '#22c55e',
+                          color: 'white',
+                          border: 'none',
+                          fontWeight: '500',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <Check size={16} />
+                        Pagar
+                      </button>
+                      {/* Botão de mais opções - apenas para contas recorrentes */}
+                      {bill.isFromRecurring && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openActionModal(bill) }}
+                          title="Mais opções"
+                          style={{
+                            padding: '8px',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? '#1e3a5f' : '#eff6ff',
+                            border: '1px solid #3b82f6',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <MoreHorizontal size={16} color="#3b82f6" />
+                        </button>
+                      )}
+                    </>
                   )}
                   <button
-                    onClick={() => openEditModal(bill)}
+                    onClick={(e) => { e.stopPropagation(); openEditModal(bill) }}
                     style={{
                       padding: '8px',
                       borderRadius: '8px',
@@ -624,7 +1057,7 @@ function Bills() {
                     <Edit2 size={16} color={colors.textSecondary} />
                   </button>
                   <button
-                    onClick={() => handleDelete(bill)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(bill) }}
                     style={{
                       padding: '8px',
                       borderRadius: '8px',
@@ -636,6 +1069,7 @@ function Bills() {
                     <Trash2 size={16} color="#ef4444" />
                   </button>
                 </div>
+                )}
               </div>
             )
           })}
@@ -1292,6 +1726,726 @@ Netflix - R$ 55,90"
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Ações da Conta */}
+      {showActionModal && selectedBill && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: colors.backgroundCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '420px',
+            padding: '24px',
+            border: `1px solid ${colors.border}`
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.text }}>
+                Opções para "{selectedBill.name}"
+              </h2>
+              <button onClick={() => setShowActionModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={20} color={colors.textSecondary} />
+              </button>
+            </div>
+
+            {/* Info da conta */}
+            <div style={{
+              padding: '12px',
+              backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: `1px solid ${colors.border}`
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: colors.textSecondary, fontSize: '14px' }}>Valor original:</span>
+                <span style={{ color: colors.text, fontWeight: '600', fontSize: '16px' }}>
+                  {formatCurrency(selectedBill.originalAmount || selectedBill.amount)}
+                </span>
+              </div>
+              {selectedBill.isPartialPayment && selectedBill.paidAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                  <span style={{ color: '#f59e0b', fontSize: '14px' }}>Já pago:</span>
+                  <span style={{ color: '#f59e0b', fontWeight: '600' }}>{formatCurrency(selectedBill.paidAmount)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Seleção de ação */}
+            {!actionType && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Botão de Desfazer - aparece apenas se houver override */}
+                {selectedBill.hasOverride && (
+                  <button
+                    onClick={() => setActionType('undo')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      border: `2px solid #ef4444`,
+                      backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      backgroundColor: '#fecaca',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Undo2 size={20} color="#ef4444" />
+                    </div>
+                    <div>
+                      <p style={{ fontWeight: '600', color: '#ef4444', margin: 0 }}>Desfazer alteração</p>
+                      <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                        {selectedBill.overrideType === 'skip'
+                          ? 'Restaurar conta (foi pulada)'
+                          : selectedBill.overrideType === 'custom_amount'
+                            ? `Restaurar valor original (${formatCurrency(selectedBill.originalAmount)})`
+                            : 'Remover pagamento parcial'}
+                      </p>
+                    </div>
+                  </button>
+                )}
+
+                {/* Pular este mês */}
+                <button
+                  onClick={() => setActionType('skip')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.border}`,
+                    backgroundColor: colors.backgroundCard,
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: '#fef3c7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <SkipForward size={20} color="#f59e0b" />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '600', color: colors.text, margin: 0 }}>Pular este mês</p>
+                    <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                      A conta não aparecerá em {selectedMonth}/{selectedYear}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Pagar com desconto */}
+                <button
+                  onClick={() => setActionType('discount')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.border}`,
+                    backgroundColor: colors.backgroundCard,
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: '#dcfce7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Percent size={20} color="#22c55e" />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '600', color: colors.text, margin: 0 }}>Pagar com desconto</p>
+                    <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                      Aplica desconto apenas neste mês
+                    </p>
+                  </div>
+                </button>
+
+                {/* Pagamento parcial */}
+                <button
+                  onClick={() => setActionType('partial')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.border}`,
+                    backgroundColor: colors.backgroundCard,
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: '#dbeafe',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <DollarSign size={20} color="#3b82f6" />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '600', color: colors.text, margin: 0 }}>Pagamento parcial</p>
+                    <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                      Pagar apenas uma parte agora
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Formulário de Skip */}
+            {actionType === 'skip' && (
+              <div>
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: '#fef3c7',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <Info size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <p style={{ color: '#92400e', fontSize: '14px', margin: 0 }}>
+                    A conta será removida apenas de <strong>{selectedMonth}/{selectedYear}</strong>.
+                    Ela continuará aparecendo normalmente nos outros meses.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Motivo (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={actionNotes}
+                    onChange={(e) => setActionNotes(e.target.value)}
+                    placeholder="Ex: Férias, sem uso este mês..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handleSkipMonth}
+                    disabled={isProcessingAction}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: '#f59e0b',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: isProcessingAction ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isProcessingAction ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <SkipForward size={16} />}
+                    Pular Mês
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário de Desconto */}
+            {actionType === 'discount' && (
+              <div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Valor do desconto (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
+                    placeholder="0,00"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {discountAmount && (
+                    <p style={{ fontSize: '13px', color: '#22c55e', marginTop: '8px' }}>
+                      Valor final: {formatCurrency((selectedBill.originalAmount || selectedBill.amount) - parseFloat(discountAmount || 0))}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Motivo do desconto (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={actionNotes}
+                    onChange={(e) => setActionNotes(e.target.value)}
+                    placeholder="Ex: Desconto por pagamento antecipado..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handlePayWithDiscount}
+                    disabled={isProcessingAction || !discountAmount}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: (!discountAmount || isProcessingAction) ? '#9ca3af' : '#22c55e',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: (!discountAmount || isProcessingAction) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isProcessingAction ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
+                    Pagar com Desconto
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário de Pagamento Parcial */}
+            {actionType === 'partial' && (
+              <div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Valor a pagar agora (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={partialAmount}
+                    onChange={(e) => setPartialAmount(e.target.value)}
+                    placeholder="0,00"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {partialAmount && (
+                    <p style={{ fontSize: '13px', color: '#3b82f6', marginTop: '8px' }}>
+                      Restante após pagamento: {formatCurrency((selectedBill.originalAmount || selectedBill.amount) - (selectedBill.paidAmount || 0) - parseFloat(partialAmount || 0))}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Observação (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={actionNotes}
+                    onChange={(e) => setActionNotes(e.target.value)}
+                    placeholder="Ex: Primeira parcela..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handlePartialPayment}
+                    disabled={isProcessingAction || !partialAmount}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: (!partialAmount || isProcessingAction) ? '#9ca3af' : '#3b82f6',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: (!partialAmount || isProcessingAction) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isProcessingAction ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <DollarSign size={16} />}
+                    Registrar Pagamento
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário de Desfazer */}
+            {actionType === 'undo' && (
+              <div>
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <AlertCircle size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <p style={{ color: '#dc2626', fontSize: '14px', margin: 0, fontWeight: '600' }}>
+                      Confirmar restauração
+                    </p>
+                    <p style={{ color: '#7f1d1d', fontSize: '13px', margin: '8px 0 0 0' }}>
+                      {selectedBill.overrideType === 'skip'
+                        ? `A conta "${selectedBill.name}" voltará a aparecer em ${selectedMonth}/${selectedYear}.`
+                        : selectedBill.overrideType === 'custom_amount'
+                          ? `O valor será restaurado de ${formatCurrency(selectedBill.amount)} para ${formatCurrency(selectedBill.originalAmount)}.`
+                          : `O registro de pagamento parcial será removido e a conta voltará ao valor original.`}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleUndoOverride}
+                    disabled={isProcessingAction}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: isProcessingAction ? '#9ca3af' : '#ef4444',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: isProcessingAction ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isProcessingAction ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Undo2 size={16} />}
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exclusão - Escolher: só este mês ou todos os meses */}
+      {showDeleteModal && selectedBill && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px'
+          }}
+          onClick={(e) => e.target === e.currentTarget && setShowDeleteModal(false)}
+        >
+          <div style={{
+            backgroundColor: colors.backgroundCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '400px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: `1px solid ${colors.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: '#fef2f2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Trash2 size={20} color="#ef4444" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '700', color: colors.text, margin: 0 }}>
+                    Excluir conta
+                  </h3>
+                  <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                    {selectedBill.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={20} color={colors.textSecondary} />
+              </button>
+            </div>
+
+            {/* Opções */}
+            <div style={{ padding: '20px 24px' }}>
+              <p style={{ fontSize: '14px', color: colors.text, marginBottom: '16px' }}>
+                O que você deseja fazer?
+              </p>
+
+              {/* Opção 1: Excluir só deste mês */}
+              <button
+                onClick={handleDeleteThisMonth}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: `2px solid ${colors.primary}`,
+                  backgroundColor: isDark ? 'rgba(59,130,246,0.1)' : '#eff6ff',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  marginBottom: '12px'
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: '#dbeafe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <SkipForward size={20} color="#3b82f6" />
+                </div>
+                <div>
+                  <p style={{ fontWeight: '600', color: colors.primary, margin: 0, fontSize: '14px' }}>
+                    Excluir apenas de {MONTH_NAMES[selectedMonth - 1]}
+                  </p>
+                  <p style={{ fontSize: '12px', color: colors.textSecondary, margin: '4px 0 0 0' }}>
+                    A conta continuará aparecendo nos outros meses
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 2: Excluir de todos */}
+              <button
+                onClick={handleDeleteAllMonths}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.backgroundCard,
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: '#fef2f2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Trash2 size={20} color="#ef4444" />
+                </div>
+                <div>
+                  <p style={{ fontWeight: '600', color: '#ef4444', margin: 0, fontSize: '14px' }}>
+                    Excluir de todos os meses
+                  </p>
+                  <p style={{ fontSize: '12px', color: colors.textSecondary, margin: '4px 0 0 0' }}>
+                    Remove a conta recorrente permanentemente
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: `1px solid ${colors.border}`,
+              display: 'flex',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.backgroundCard,
+                  color: colors.textSecondary,
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { capitalize } = require('../utils/stringHelper');
 
 const transactionSchema = new mongoose.Schema({
   user: {
@@ -102,5 +103,14 @@ transactionSchema.index({ user: 1, category: 1 });
 transactionSchema.index({ user: 1, account: 1, date: -1 });
 transactionSchema.index({ installmentGroupId: 1 });
 transactionSchema.index({ tags: 1 });
+
+// Capitalizar automaticamente descrição e categoria (usando setter)
+transactionSchema.path('description').set(function(v) {
+  return v ? capitalize(v) : v;
+});
+
+transactionSchema.path('category').set(function(v) {
+  return v ? capitalize(v) : v;
+});
 
 module.exports = mongoose.model('Transaction', transactionSchema);

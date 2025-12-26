@@ -146,7 +146,7 @@ router.post('/:id/payment', [
     const transaction = await Transaction.create({
       user: req.user._id,
       type: 'expense',
-      category: 'dividas', // Categoria específica para dívidas
+      category: 'Dividas', // Categoria específica para dívidas
       description: `Pagamento: ${debt.name} (${debt.paidInstallments}/${debt.installments})`,
       amount: amount,
       account: account || null, // Conta bancária opcional

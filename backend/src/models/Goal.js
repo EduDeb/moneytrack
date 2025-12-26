@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { capitalize } = require('../utils/stringHelper')
 
 const goalSchema = new mongoose.Schema({
   user: {
@@ -166,5 +167,10 @@ goalSchema.virtual('forecast').get(function() {
 
 goalSchema.set('toJSON', { virtuals: true })
 goalSchema.set('toObject', { virtuals: true })
+
+// Capitalizar automaticamente nome (usando setter)
+goalSchema.path('name').set(function(v) {
+  return v ? capitalize(v) : v
+})
 
 module.exports = mongoose.model('Goal', goalSchema)

@@ -1,7 +1,10 @@
 import axios from 'axios'
 
+// Use environment variable for production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: API_BASE_URL,
   timeout: 30000, // 30 seconds timeout to prevent hanging requests
   headers: {
     'Content-Type': 'application/json'
@@ -19,9 +22,10 @@ api.interceptors.request.use(config => {
 
 // Função para aguardar backend estar pronto
 const waitForBackend = async (maxRetries = 10, delayMs = 1000) => {
+  const healthUrl = API_BASE_URL.replace('/api', '') + '/api/health'
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await axios.get('http://localhost:3001/api/health', { timeout: 2000 })
+      await axios.get(healthUrl, { timeout: 2000 })
       return true
     } catch (e) {
       if (i < maxRetries - 1) {

@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
+const { connectDB, isDBConnected } = require('./config/db');
 const {
   generalLimiter,
   helmetConfig,
@@ -14,9 +14,6 @@ const {
 
 // Carregar variáveis de ambiente
 dotenv.config();
-
-// Conectar ao banco de dados
-connectDB();
 
 const app = express();
 
@@ -120,7 +117,8 @@ app.get('/api/health', (req, res) => {
     message: 'API Finance App funcionando!',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
-    security: 'enabled'
+    security: 'enabled',
+    database: isDBConnected() ? 'connected' : 'connecting'
   });
 });
 
@@ -167,6 +165,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 ║  NoSQL Injection: ✅ Protected               ║
 ╚══════════════════════════════════════════════╝
   `);
+
+  // Connect to MongoDB AFTER server starts (so health check works immediately)
+  connectDB();
 });
 
 // Graceful shutdown

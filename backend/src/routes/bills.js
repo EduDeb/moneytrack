@@ -9,12 +9,14 @@ const { protect, validateObjectId } = require('../middleware/auth')
 
 // Função auxiliar para calcular urgência baseada na semana calendário
 // Semana útil: Segunda (1) a Domingo (0)
+// CORREÇÃO: Usar UTC consistentemente para evitar problemas de timezone
 function calculateUrgency(dueDate, isPaid) {
   if (isPaid) return 'paid'
 
   const today = new Date()
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+  // Usar UTC para consistência com datas armazenadas no banco
+  const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  const dueDateStart = new Date(Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate()))
 
   const daysUntilDue = Math.ceil((dueDateStart - todayStart) / (1000 * 60 * 60 * 24))
 
@@ -22,8 +24,8 @@ function calculateUrgency(dueDate, isPaid) {
   if (daysUntilDue === 0) return 'today'
   if (daysUntilDue <= 3) return 'soon'
 
-  // Calcular fim da semana atual (próximo domingo)
-  const dayOfWeek = today.getDay() // 0 = domingo, 1 = segunda, etc.
+  // Calcular fim da semana atual (próximo domingo) usando UTC
+  const dayOfWeek = today.getUTCDay() // 0 = domingo, 1 = segunda, etc.
   const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
 
   // Se vence até o domingo desta semana = "Esta semana"
@@ -262,7 +264,8 @@ router.get('/', async (req, res) => {
 
     res.json({ bills: allBills })
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar contas', error: error.message })
+    console.error('[BILLS ERROR] Listar contas:', error.message)
+    res.status(500).json({ message: 'Erro ao buscar contas' })
   }
 })
 
@@ -354,7 +357,8 @@ router.get('/upcoming', async (req, res) => {
 
     res.json({ bills: allUpcoming })
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar contas', error: error.message })
+    console.error('[BILLS ERROR] Listar próximas:', error.message)
+    res.status(500).json({ message: 'Erro ao buscar contas' })
   }
 })
 
@@ -506,7 +510,8 @@ router.get('/summary', async (req, res) => {
       discountsApplied // Valor total de descontos aplicados
     })
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar resumo', error: error.message })
+    console.error('[BILLS ERROR] Resumo:', error.message)
+    res.status(500).json({ message: 'Erro ao buscar resumo' })
   }
 })
 
@@ -542,7 +547,8 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ bill })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao criar conta', error: error.message })
+    console.error('[BILLS ERROR] Criar conta:', error.message)
+    res.status(400).json({ message: 'Erro ao criar conta' })
   }
 })
 
@@ -569,7 +575,7 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 
     res.json({ bill })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao atualizar conta', error: error.message })
+    res.status(400).json({ message: 'Erro ao atualizar conta' })
   }
 })
 
@@ -622,7 +628,7 @@ router.put('/:id/override', validateObjectId(), async (req, res) => {
       }
     })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao criar sobrescrita', error: error.message })
+    res.status(400).json({ message: 'Erro ao criar sobrescrita' })
   }
 })
 
@@ -669,7 +675,7 @@ router.post('/:id/skip', validateObjectId(), async (req, res) => {
       override
     })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao pular conta', error: error.message })
+    res.status(400).json({ message: 'Erro ao pular conta' })
   }
 })
 
@@ -767,7 +773,7 @@ router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
       finalAmount
     })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao pagar com desconto', error: error.message })
+    res.status(400).json({ message: 'Erro ao pagar com desconto' })
   }
 })
 
@@ -882,7 +888,7 @@ router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
       isFullyPaid: remaining <= 0
     })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao registrar pagamento parcial', error: error.message })
+    res.status(400).json({ message: 'Erro ao registrar pagamento parcial' })
   }
 })
 
@@ -909,7 +915,7 @@ router.delete('/:id/override', validateObjectId(), async (req, res) => {
 
     res.json({ message: 'Valor restaurado para o original da recorrência' })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao remover sobrescrita', error: error.message })
+    res.status(400).json({ message: 'Erro ao remover sobrescrita' })
   }
 })
 
@@ -1004,7 +1010,7 @@ router.post('/:id/pay', validateObjectId(), async (req, res) => {
 
     res.json({ bill, transaction, message: 'Conta paga e transação registrada!' })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao pagar conta', error: error.message })
+    res.status(400).json({ message: 'Erro ao pagar conta' })
   }
 })
 
@@ -1060,7 +1066,7 @@ router.post('/:id/unpay', validateObjectId(), async (req, res) => {
 
     res.json({ bill, message: 'Pagamento cancelado com sucesso!' })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao cancelar pagamento', error: error.message })
+    res.status(400).json({ message: 'Erro ao cancelar pagamento' })
   }
 })
 
@@ -1095,7 +1101,7 @@ router.post('/:id/renew', validateObjectId(), async (req, res) => {
 
     res.json({ bill, message: 'Conta renovada para o próximo mês!' })
   } catch (error) {
-    res.status(400).json({ message: 'Erro ao renovar conta', error: error.message })
+    res.status(400).json({ message: 'Erro ao renovar conta' })
   }
 })
 
@@ -1111,7 +1117,7 @@ router.delete('/:id', validateObjectId(), async (req, res) => {
 
     res.json({ message: 'Conta excluída com sucesso' })
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao excluir conta', error: error.message })
+    res.status(500).json({ message: 'Erro ao excluir conta' })
   }
 })
 

@@ -201,6 +201,21 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ message: 'Token inválido' });
     }
 
+    // CORREÇÃO DE SEGURANÇA: Verificar se o refresh token está na blacklist
+    const TokenBlacklist = require('../models/TokenBlacklist');
+    const isBlacklisted = await TokenBlacklist.findOne({
+      token: refreshToken,
+      $or: [
+        { expiresAt: { $gt: new Date() } },
+        { expiresAt: { $exists: false } }
+      ]
+    });
+
+    if (isBlacklisted) {
+      console.log(`[SECURITY] Tentativa de uso de refresh token na blacklist`);
+      return res.status(401).json({ message: 'Token inválido ou revogado' });
+    }
+
     // Verificar se usuário ainda existe e está ativo
     const user = await User.findById(decoded.userId);
 

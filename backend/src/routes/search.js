@@ -13,6 +13,11 @@ const Category = require('../models/Category');
 // Todas as rotas requerem autenticação
 router.use(protect);
 
+// Função para escapar caracteres especiais de regex (previne ReDoS)
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // @route   GET /api/search
 // @desc    Busca global em todas as entidades
 router.get('/', async (req, res) => {
@@ -23,7 +28,9 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ message: 'A busca deve ter pelo menos 2 caracteres' });
     }
 
-    const searchRegex = new RegExp(q, 'i');
+    // CORREÇÃO DE SEGURANÇA: Escapar caracteres especiais para prevenir ReDoS
+    const sanitizedQuery = escapeRegex(q);
+    const searchRegex = new RegExp(sanitizedQuery, 'i');
     const userId = req.user._id;
     const limitNum = Math.min(parseInt(limit), 50);
 
@@ -254,8 +261,8 @@ router.get('/', async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error('Erro na busca global:', error);
-    res.status(500).json({ message: 'Erro no servidor', error: error.message });
+    console.error('[SEARCH ERROR] Busca global:', error.message);
+    res.status(500).json({ message: 'Erro ao realizar busca' });
   }
 });
 
@@ -286,7 +293,8 @@ router.get('/suggestions', async (req, res) => {
       descriptions: topDescriptions.map(d => d._id).filter(Boolean)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Erro no servidor', error: error.message });
+    console.error('[SEARCH ERROR] Sugestões:', error.message);
+    res.status(500).json({ message: 'Erro ao buscar sugestões' });
   }
 });
 

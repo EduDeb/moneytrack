@@ -27,7 +27,7 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     message: 'API Finance App funcionando!',
     timestamp: new Date().toISOString(),
-    version: '2.0.0',
+    version: '2.0.1',
     environment: process.env.NODE_ENV || 'development'
   });
 });
@@ -156,21 +156,16 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-╔══════════════════════════════════════════════╗
-║     🚀 MoneyTrack API Server v2.0.0         ║
-╠══════════════════════════════════════════════╣
-║  Port: ${PORT}                                  ║
-║  Security: ✅ Enabled                        ║
-║  Rate Limiting: ✅ Active                    ║
-║  XSS Protection: ✅ Active                   ║
-║  NoSQL Injection: ✅ Protected               ║
-╚══════════════════════════════════════════════╝
-  `);
+// Conectar ao MongoDB primeiro
+connectDB().then(() => {
+  console.log('MongoDB pronto');
+}).catch(err => {
+  console.error('Erro MongoDB:', err.message);
+});
 
-  // Connect to MongoDB AFTER server starts (so health check works immediately)
-  connectDB();
+// Iniciar servidor (sem especificar host - Railway define automaticamente)
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 // Graceful shutdown

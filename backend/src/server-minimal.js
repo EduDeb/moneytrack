@@ -23,7 +23,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`Minimal server running on port ${PORT}`);
+// Iniciar servidor (0.0.0.0 para aceitar conexões externas no Railway)
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`Minimal server running on ${HOST}:${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

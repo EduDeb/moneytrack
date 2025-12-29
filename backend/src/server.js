@@ -22,12 +22,19 @@ const app = express();
 // ============================================
 // HEALTH CHECK - ANTES DE TUDO (para Railway)
 // ============================================
+
+// Health check na raiz (Railway verifica aqui)
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'OK', message: 'MoneyTrack API' });
+});
+
+// Health check completo
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     message: 'API Finance App funcionando!',
     timestamp: new Date().toISOString(),
-    version: '2.0.1',
+    version: '2.0.2',
     environment: process.env.NODE_ENV || 'development'
   });
 });

@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_18"]
+
+[phases.build]
+cmds = ["npm install"]
+
+[start]
+cmd = "node src/server-minimal.js"

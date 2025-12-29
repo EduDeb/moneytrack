@@ -8,4 +8,4 @@ cmds = ["npm ci --only=production"]
 NODE_ENV = "production"
 
 [start]
-cmd = "node src/server-minimal.js"
+cmd = "node src/server.js"

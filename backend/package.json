@@ -7,7 +7,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "start": "node src/server-minimal.js",
+    "start": "node src/server.js",
     "start:minimal": "node src/server-minimal.js",
     "dev": "node --watch src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"

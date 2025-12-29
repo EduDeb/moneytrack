@@ -37,10 +37,10 @@ const loginLimiter = rateLimit({
   }
 })
 
-// Rate Limiter para Registro - 3 por hora
+// Rate Limiter para Registro - 10 por hora (para permitir amigos/família testarem)
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora
-  max: 3,
+  max: 10,
   message: {
     status: 429,
     message: 'Limite de cadastros atingido. Tente novamente em 1 hora.',

@@ -1,9 +1,17 @@
 const mongoose = require('mongoose');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const MONGODB_URI = 'mongodb+srv://MONEYTRACK:MONEYTRACK123@cluster0.qismttx.mongodb.net/finance-app';
+// SEGURANÇA: Usa variável de ambiente em vez de credenciais hardcoded
+const MONGODB_URI = process.env.MONGODB_URI;
 
-const OLD_EMAIL = 'arqdeboraso@gmail.com';
-const NEW_EMAIL = 'edudeb.ia26@gmail.com';
+// Emails podem ser passados por variável de ambiente ou definidos aqui
+const OLD_EMAIL = process.env.OLD_EMAIL || 'email_antigo@example.com';
+const NEW_EMAIL = process.env.NEW_EMAIL || 'email_novo@example.com';
+
+if (!MONGODB_URI) {
+  console.error('ERRO: MONGODB_URI não definida no .env');
+  process.exit(1);
+}
 
 async function changeEmail() {
   try {

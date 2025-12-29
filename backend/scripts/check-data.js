@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const MONGODB_URI = 'mongodb+srv://MONEYTRACK:MONEYTRACK123@cluster0.qismttx.mongodb.net/finance-app';
+// SEGURANÇA: Usa variável de ambiente em vez de credenciais hardcoded
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('ERRO: MONGODB_URI não definida no .env');
+  process.exit(1);
+}
 
 async function checkData() {
   try {

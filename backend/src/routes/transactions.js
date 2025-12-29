@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const Transaction = require('../models/Transaction');
 const { protect, validateObjectId } = require('../middleware/auth');
 const { normalizeToUTC } = require('../utils/dateHelper');
+const { roundMoney, sumMoney, subtractMoney } = require('../utils/moneyHelper');
 
 // Todas as rotas requerem autenticação
 router.use(protect);
@@ -70,16 +71,16 @@ router.get('/summary', async (req, res) => {
       date: { $gte: startDate, $lte: endDate }
     });
 
-    // Calcular receitas e despesas do mês
-    const income = transactions
+    // Calcular receitas e despesas do mês (usando funções monetárias para precisão)
+    const income = sumMoney(...transactions
       .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
 
-    const expenses = transactions
+    const expenses = sumMoney(...transactions
       .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
 
-    const monthBalance = income - expenses;
+    const monthBalance = subtractMoney(income, expenses);
 
     // SALDO ACUMULADO (como conta corrente)
     // Buscar TODAS as transações anteriores ao mês selecionado
@@ -88,18 +89,18 @@ router.get('/summary', async (req, res) => {
       date: { $lt: startDate }
     });
 
-    const previousIncome = previousTransactions
+    const previousIncome = sumMoney(...previousTransactions
       .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
 
-    const previousExpenses = previousTransactions
+    const previousExpenses = sumMoney(...previousTransactions
       .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
 
-    const previousBalance = previousIncome - previousExpenses;
+    const previousBalance = subtractMoney(previousIncome, previousExpenses);
 
     // Saldo total acumulado (saldo anterior + saldo do mês atual)
-    const accumulatedBalance = previousBalance + monthBalance;
+    const accumulatedBalance = sumMoney(previousBalance, monthBalance);
 
     // Categorias do mês (normalizadas - agrupa por nome case-insensitive)
     const byCategoryRaw = transactions.reduce((acc, t) => {
@@ -112,9 +113,11 @@ router.get('/summary', async (req, res) => {
       return acc;
     }, {});
 
-    // Ordenar por valor (maior para menor)
+    // Ordenar por valor (maior para menor) e arredondar valores
     const byCategory = Object.fromEntries(
-      Object.entries(byCategoryRaw).sort(([,a], [,b]) => b - a)
+      Object.entries(byCategoryRaw)
+        .map(([cat, val]) => [cat, roundMoney(val)])
+        .sort(([,a], [,b]) => b - a)
     );
 
     res.json({
@@ -172,13 +175,13 @@ router.get('/analytics', async (req, res) => {
       })
     ]);
 
-    // Despesas do mês atual
+    // Despesas do mês atual (usando função monetária para precisão)
     const currentExpenses = currentTransactions.filter(t => t.type === 'expense');
-    const currentTotal = currentExpenses.reduce((sum, t) => sum + t.amount, 0);
+    const currentTotal = sumMoney(...currentExpenses.map(t => t.amount));
 
     // Despesas do mês anterior
     const lastExpenses = lastTransactions.filter(t => t.type === 'expense');
-    const lastTotal = lastExpenses.reduce((sum, t) => sum + t.amount, 0);
+    const lastTotal = sumMoney(...lastExpenses.map(t => t.amount));
 
     // Top 5 categorias (mês atual)
     const categoryTotals = {};

@@ -6,6 +6,7 @@ const Transaction = require('../models/Transaction')
 const RecurringPayment = require('../models/RecurringPayment')
 const RecurringOverride = require('../models/RecurringOverride')
 const { protect, validateObjectId } = require('../middleware/auth')
+const { roundMoney, sumMoney, subtractMoney } = require('../utils/moneyHelper')
 
 // Função auxiliar para calcular urgência baseada na semana calendário
 // Semana útil: Segunda (1) a Domingo (0)
@@ -477,27 +478,29 @@ router.get('/summary', async (req, res) => {
       }
     }).filter(r => r !== null)
 
-    // Calcular totais das bills
-    const billsTotal = bills.reduce((sum, b) => sum + b.amount, 0)
-    const billsPaid = bills.filter(b => b.isPaid).reduce((sum, b) => sum + b.amount, 0)
+    // Calcular totais das bills (usando funções monetárias para precisão)
+    const billsTotal = sumMoney(...bills.map(b => b.amount))
+    const billsPaid = sumMoney(...bills.filter(b => b.isPaid).map(b => b.amount))
 
     // Calcular totais das recorrências USANDO O VALOR FINAL (com desconto aplicado)
-    const recurringTotal = processedRecurrings.reduce((sum, r) => sum + r.finalAmount, 0)
-    const recurringPaid = processedRecurrings.filter(r => r.isPaidThisMonth).reduce((sum, r) => sum + r.finalAmount, 0)
+    const recurringTotal = sumMoney(...processedRecurrings.map(r => r.finalAmount))
+    const recurringPaid = sumMoney(...processedRecurrings.filter(r => r.isPaidThisMonth).map(r => r.finalAmount))
     const recurringOverdue = processedRecurrings.filter(r => r.isOverdue).length
 
-    // Totais combinados
-    const total = billsTotal + recurringTotal
-    const paid = billsPaid + recurringPaid
-    const pending = total - paid
+    // Totais combinados (usando funções monetárias para precisão)
+    const total = sumMoney(billsTotal, recurringTotal)
+    const paid = sumMoney(billsPaid, recurringPaid)
+    const pending = subtractMoney(total, paid)
     const paidCount = bills.filter(b => b.isPaid).length + processedRecurrings.filter(r => r.isPaidThisMonth).length
     const pendingCount = bills.filter(b => !b.isPaid).length + processedRecurrings.filter(r => !r.isPaidThisMonth).length
     const overdueCount = bills.filter(b => !b.isPaid && b.daysUntilDue < 0).length + recurringOverdue
 
-    // Calcular descontos aplicados (para transparência)
-    const discountsApplied = processedRecurrings
-      .filter(r => r.hasOverride && r.overrideType === 'custom_amount')
-      .reduce((sum, r) => sum + (r.amount - r.finalAmount), 0)
+    // Calcular descontos aplicados (para transparência) - usando função monetária
+    const discountsApplied = roundMoney(
+      processedRecurrings
+        .filter(r => r.hasOverride && r.overrideType === 'custom_amount')
+        .reduce((sum, r) => sum + (r.amount - r.finalAmount), 0)
+    )
 
     res.json({
       total,

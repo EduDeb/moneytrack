@@ -5,6 +5,7 @@ const Bill = require('../models/Bill')
 const { protect } = require('../middleware/auth')
 const XLSX = require('xlsx')
 const PDFDocument = require('pdfkit')
+const { roundMoney, sumMoney, subtractMoney } = require('../utils/moneyHelper')
 
 router.use(protect)
 
@@ -98,10 +99,10 @@ router.get('/summary', async (req, res) => {
       date: { $gte: startDate, $lte: endDate }
     }).sort({ date: -1 })
 
-    // Calcular totais
-    const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
-    const expenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-    const balance = income - expenses
+    // Calcular totais (usando funções monetárias para precisão)
+    const income = sumMoney(...transactions.filter(t => t.type === 'income').map(t => t.amount))
+    const expenses = sumMoney(...transactions.filter(t => t.type === 'expense').map(t => t.amount))
+    const balance = subtractMoney(income, expenses)
 
     // Agrupar por categoria
     const byCategory = {}

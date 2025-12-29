@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const { connectDB, isDBConnected } = require('./config/db');
+const { connectDB } = require('./config/db');
 const {
   generalLimiter,
   helmetConfig,
@@ -12,10 +11,26 @@ const {
   requestLogger
 } = require('./middleware/security');
 
-// Carregar variáveis de ambiente
-dotenv.config();
+// Carregar variáveis de ambiente APENAS em desenvolvimento
+// Em produção (Railway), as variáveis vêm do dashboard
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const app = express();
+
+// ============================================
+// HEALTH CHECK - ANTES DE TUDO (para Railway)
+// ============================================
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API Finance App funcionando!',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Trust proxy (para rate limiting funcionar corretamente atrás de proxy)
 app.set('trust proxy', 1);
@@ -109,18 +124,6 @@ app.use('/api/profile', require('./routes/profile'));
 
 // Patrimônio (simplificado)
 app.use('/api/patrimony', require('./routes/patrimony'));
-
-// Rota de saúde (sem autenticação, para monitoramento)
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    message: 'API Finance App funcionando!',
-    timestamp: new Date().toISOString(),
-    version: '2.0.0',
-    security: 'enabled',
-    database: isDBConnected() ? 'connected' : 'connecting'
-  });
-});
 
 // ============================================
 // TRATAMENTO DE ERROS

@@ -2,7 +2,10 @@
 nixPkgs = ["nodejs_18"]
 
 [phases.build]
-cmds = ["npm install"]
+cmds = ["npm ci --only=production"]
+
+[variables]
+NODE_ENV = "production"
 
 [start]
 cmd = "node src/server-minimal.js"

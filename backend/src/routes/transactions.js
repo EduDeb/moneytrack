@@ -600,62 +600,59 @@ router.get('/diagnose-accounts', async (req, res) => {
     const Account = require('../models/Account');
     const collection = mongoose.connection.collection('transactions');
 
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+
     // Conta Principal
     const mainAccount = await Account.findOne({ user: req.user._id, name: 'Banco Principal' });
 
     // Contar por tipo de campo account
-    const stats = await collection.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
-      {
-        $group: {
-          _id: { $type: '$account' },
-          count: { $sum: 1 }
-        }
-      }
+    const accountFieldTypes = await collection.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: { $type: '$account' }, count: { $sum: 1 } } }
     ]).toArray();
 
-    // Contar transações por account ID (para ver quais accounts têm transações)
+    // Contar por account ID
     const accountDistribution = await collection.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
-      {
-        $group: {
-          _id: '$account',
-          count: { $sum: 1 }
-        }
-      }
+      { $match: { user: userId } },
+      { $group: { _id: '$account', count: { $sum: 1 } } }
     ]).toArray();
 
-    // Buscar transações que NÃO correspondem à conta principal
-    const nonMatchingTxs = mainAccount ? await collection.find({
-      user: new mongoose.Types.ObjectId(req.user._id),
-      account: { $ne: mainAccount._id },
-      status: 'confirmed'
-    }).toArray() : [];
+    // Contar por STATUS (incluindo tipo do campo)
+    const statusDistribution = await collection.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: { status: '$status', statusType: { $type: '$status' } }, count: { $sum: 1 } } }
+    ]).toArray();
 
-    // Contar transações que correspondem à conta pelo ID
+    // Transações com status diferente de 'confirmed'
+    const notConfirmedTxs = await collection.find({
+      user: userId,
+      status: { $ne: 'confirmed' }
+    }).toArray();
+
+    // Contar correspondência com Banco Principal
     const matchingAccountId = mainAccount ? await collection.countDocuments({
-      user: new mongoose.Types.ObjectId(req.user._id),
+      user: userId,
       account: mainAccount._id,
       status: 'confirmed'
     }) : 0;
 
     res.json({
       mainAccountId: mainAccount?._id,
-      accountFieldTypes: stats,
+      totalTransactions: await collection.countDocuments({ user: userId }),
+      accountFieldTypes,
       accountDistribution,
+      statusDistribution,
       matchingAccountId,
-      nonMatchingCount: nonMatchingTxs.length,
-      nonMatchingTxs: nonMatchingTxs.map(t => ({
+      confirmedCount: await collection.countDocuments({ user: userId, status: 'confirmed' }),
+      notConfirmedCount: notConfirmedTxs.length,
+      notConfirmedTxs: notConfirmedTxs.slice(0, 20).map(t => ({
         _id: t._id,
         description: t.description,
         amount: t.amount,
         type: t.type,
-        account: t.account
-      })),
-      expectedTotal: await collection.countDocuments({
-        user: new mongoose.Types.ObjectId(req.user._id),
-        status: 'confirmed'
-      })
+        status: t.status,
+        statusType: typeof t.status
+      }))
     });
   } catch (error) {
     res.status(500).json({ message: 'Erro no diagnóstico', error: error.message });

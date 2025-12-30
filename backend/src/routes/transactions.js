@@ -531,44 +531,97 @@ router.post('/fix-account-refs', async (req, res) => {
     const mongoose = require('mongoose');
     const Account = require('../models/Account');
 
-    // Buscar todas as transações do usuário
-    const transactions = await Transaction.find({ user: req.user._id });
+    // Buscar a conta principal do usuário
+    const mainAccount = await Account.findOne({ user: req.user._id, name: 'Banco Principal' });
+    if (!mainAccount) {
+      return res.status(404).json({ message: 'Conta "Banco Principal" não encontrada' });
+    }
+
+    // Usar aggregation para detectar transações com account como string
+    const collection = mongoose.connection.collection('transactions');
+
+    // Buscar transações onde account é string (não ObjectId)
+    const stringAccountTxs = await collection.find({
+      user: new mongoose.Types.ObjectId(req.user._id),
+      account: { $type: 'string' }
+    }).toArray();
 
     let fixed = 0;
-    let errors = [];
-
-    for (const tx of transactions) {
-      // Se account existe mas não é um ObjectId válido (é uma string simples)
-      if (tx.account && typeof tx.account === 'string') {
-        try {
-          // Converter string para ObjectId
-          const objectId = new mongoose.Types.ObjectId(tx.account);
-
-          // Verificar se a conta existe
-          const accountExists = await Account.findOne({ _id: objectId, user: req.user._id });
-
-          if (accountExists) {
-            // Atualizar diretamente no banco usando updateOne para forçar o tipo correto
-            await Transaction.updateOne(
-              { _id: tx._id },
-              { $set: { account: objectId } }
-            );
-            fixed++;
-          }
-        } catch (e) {
-          errors.push({ txId: tx._id, error: e.message });
-        }
+    for (const tx of stringAccountTxs) {
+      try {
+        await collection.updateOne(
+          { _id: tx._id },
+          { $set: { account: new mongoose.Types.ObjectId(tx.account) } }
+        );
+        fixed++;
+      } catch (e) {
+        console.error('Erro ao corrigir tx:', tx._id, e.message);
       }
     }
 
+    // Também verificar transações sem account e vincular à conta principal
+    const noAccountResult = await collection.updateMany(
+      {
+        user: new mongoose.Types.ObjectId(req.user._id),
+        $or: [
+          { account: { $exists: false } },
+          { account: null }
+        ]
+      },
+      { $set: { account: mainAccount._id } }
+    );
+
     res.json({
-      message: `${fixed} referências corrigidas`,
-      fixed,
-      total: transactions.length,
-      errors: errors.length > 0 ? errors : undefined
+      message: `${fixed} strings corrigidas, ${noAccountResult.modifiedCount} sem account vinculadas`,
+      fixedStrings: fixed,
+      linkedToAccount: noAccountResult.modifiedCount,
+      total: await collection.countDocuments({ user: new mongoose.Types.ObjectId(req.user._id) })
     });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao corrigir referências', error: error.message });
+  }
+});
+
+// @route   GET /api/transactions/diagnose-accounts
+// @desc    Diagnosticar tipos de account field no MongoDB
+router.get('/diagnose-accounts', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const Account = require('../models/Account');
+    const collection = mongoose.connection.collection('transactions');
+
+    // Conta Principal
+    const mainAccount = await Account.findOne({ user: req.user._id, name: 'Banco Principal' });
+
+    // Contar por tipo de campo account
+    const stats = await collection.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
+      {
+        $group: {
+          _id: { $type: '$account' },
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray();
+
+    // Contar transações que correspondem à conta pelo ID
+    const matchingAccountId = mainAccount ? await collection.countDocuments({
+      user: new mongoose.Types.ObjectId(req.user._id),
+      account: mainAccount._id,
+      status: 'confirmed'
+    }) : 0;
+
+    res.json({
+      mainAccountId: mainAccount?._id,
+      accountFieldTypes: stats,
+      matchingAccountId,
+      expectedTotal: await collection.countDocuments({
+        user: new mongoose.Types.ObjectId(req.user._id),
+        status: 'confirmed'
+      })
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro no diagnóstico', error: error.message });
   }
 });
 

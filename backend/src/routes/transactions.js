@@ -524,4 +524,52 @@ router.post('/link-all-to-account', async (req, res) => {
   }
 });
 
+// @route   POST /api/transactions/fix-account-refs
+// @desc    Corrigir referências de account que estão como string para ObjectId
+router.post('/fix-account-refs', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const Account = require('../models/Account');
+
+    // Buscar todas as transações do usuário
+    const transactions = await Transaction.find({ user: req.user._id });
+
+    let fixed = 0;
+    let errors = [];
+
+    for (const tx of transactions) {
+      // Se account existe mas não é um ObjectId válido (é uma string simples)
+      if (tx.account && typeof tx.account === 'string') {
+        try {
+          // Converter string para ObjectId
+          const objectId = new mongoose.Types.ObjectId(tx.account);
+
+          // Verificar se a conta existe
+          const accountExists = await Account.findOne({ _id: objectId, user: req.user._id });
+
+          if (accountExists) {
+            // Atualizar diretamente no banco usando updateOne para forçar o tipo correto
+            await Transaction.updateOne(
+              { _id: tx._id },
+              { $set: { account: objectId } }
+            );
+            fixed++;
+          }
+        } catch (e) {
+          errors.push({ txId: tx._id, error: e.message });
+        }
+      }
+    }
+
+    res.json({
+      message: `${fixed} referências corrigidas`,
+      fixed,
+      total: transactions.length,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao corrigir referências', error: error.message });
+  }
+});
+
 module.exports = router;

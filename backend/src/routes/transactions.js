@@ -483,4 +483,45 @@ router.delete('/:id', validateObjectId(), async (req, res) => {
   }
 });
 
+// @route   POST /api/transactions/link-all-to-account
+// @desc    Vincular todas as transações sem conta a uma conta específica
+router.post('/link-all-to-account', async (req, res) => {
+  try {
+    const { accountId } = req.body;
+
+    if (!accountId) {
+      return res.status(400).json({ message: 'accountId é obrigatório' });
+    }
+
+    // Verificar se a conta pertence ao usuário
+    const Account = require('../models/Account');
+    const account = await Account.findOne({ _id: accountId, user: req.user._id });
+    if (!account) {
+      return res.status(404).json({ message: 'Conta não encontrada' });
+    }
+
+    // Atualizar todas as transações sem conta
+    const result = await Transaction.updateMany(
+      { user: req.user._id, account: { $exists: false } },
+      { $set: { account: accountId } }
+    );
+
+    // Também atualizar transações com account null
+    const result2 = await Transaction.updateMany(
+      { user: req.user._id, account: null },
+      { $set: { account: accountId } }
+    );
+
+    const totalUpdated = result.modifiedCount + result2.modifiedCount;
+
+    res.json({
+      message: `${totalUpdated} transações vinculadas à conta "${account.name}"`,
+      modifiedCount: totalUpdated,
+      accountName: account.name
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao vincular transações', error: error.message });
+  }
+});
+
 module.exports = router;

@@ -525,7 +525,7 @@ router.post('/link-all-to-account', async (req, res) => {
 });
 
 // @route   POST /api/transactions/fix-account-refs
-// @desc    Corrigir referências de account que estão como string para ObjectId
+// @desc    Corrigir referências de account - vincular TODAS ao Banco Principal
 router.post('/fix-account-refs', async (req, res) => {
   try {
     const mongoose = require('mongoose');
@@ -537,32 +537,32 @@ router.post('/fix-account-refs', async (req, res) => {
       return res.status(404).json({ message: 'Conta "Banco Principal" não encontrada' });
     }
 
-    // Usar aggregation para detectar transações com account como string
     const collection = mongoose.connection.collection('transactions');
+    const userId = new mongoose.Types.ObjectId(req.user._id);
 
-    // Buscar transações onde account é string (não ObjectId)
+    // 1. Corrigir transações onde account é string
     const stringAccountTxs = await collection.find({
-      user: new mongoose.Types.ObjectId(req.user._id),
+      user: userId,
       account: { $type: 'string' }
     }).toArray();
 
-    let fixed = 0;
+    let fixedStrings = 0;
     for (const tx of stringAccountTxs) {
       try {
         await collection.updateOne(
           { _id: tx._id },
-          { $set: { account: new mongoose.Types.ObjectId(tx.account) } }
+          { $set: { account: mainAccount._id } }
         );
-        fixed++;
+        fixedStrings++;
       } catch (e) {
         console.error('Erro ao corrigir tx:', tx._id, e.message);
       }
     }
 
-    // Também verificar transações sem account e vincular à conta principal
+    // 2. Vincular transações sem account
     const noAccountResult = await collection.updateMany(
       {
-        user: new mongoose.Types.ObjectId(req.user._id),
+        user: userId,
         $or: [
           { account: { $exists: false } },
           { account: null }
@@ -571,11 +571,21 @@ router.post('/fix-account-refs', async (req, res) => {
       { $set: { account: mainAccount._id } }
     );
 
+    // 3. Vincular transações com account diferente do Banco Principal
+    const wrongAccountResult = await collection.updateMany(
+      {
+        user: userId,
+        account: { $ne: mainAccount._id }
+      },
+      { $set: { account: mainAccount._id } }
+    );
+
     res.json({
-      message: `${fixed} strings corrigidas, ${noAccountResult.modifiedCount} sem account vinculadas`,
-      fixedStrings: fixed,
-      linkedToAccount: noAccountResult.modifiedCount,
-      total: await collection.countDocuments({ user: new mongoose.Types.ObjectId(req.user._id) })
+      message: 'Todas as transações foram vinculadas ao Banco Principal',
+      fixedStrings,
+      linkedNoAccount: noAccountResult.modifiedCount,
+      linkedWrongAccount: wrongAccountResult.modifiedCount,
+      total: await collection.countDocuments({ user: userId })
     });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao corrigir referências', error: error.message });
@@ -604,6 +614,24 @@ router.get('/diagnose-accounts', async (req, res) => {
       }
     ]).toArray();
 
+    // Contar transações por account ID (para ver quais accounts têm transações)
+    const accountDistribution = await collection.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
+      {
+        $group: {
+          _id: '$account',
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray();
+
+    // Buscar transações que NÃO correspondem à conta principal
+    const nonMatchingTxs = mainAccount ? await collection.find({
+      user: new mongoose.Types.ObjectId(req.user._id),
+      account: { $ne: mainAccount._id },
+      status: 'confirmed'
+    }).toArray() : [];
+
     // Contar transações que correspondem à conta pelo ID
     const matchingAccountId = mainAccount ? await collection.countDocuments({
       user: new mongoose.Types.ObjectId(req.user._id),
@@ -614,7 +642,16 @@ router.get('/diagnose-accounts', async (req, res) => {
     res.json({
       mainAccountId: mainAccount?._id,
       accountFieldTypes: stats,
+      accountDistribution,
       matchingAccountId,
+      nonMatchingCount: nonMatchingTxs.length,
+      nonMatchingTxs: nonMatchingTxs.map(t => ({
+        _id: t._id,
+        description: t.description,
+        amount: t.amount,
+        type: t.type,
+        account: t.account
+      })),
       expectedTotal: await collection.countDocuments({
         user: new mongoose.Types.ObjectId(req.user._id),
         status: 'confirmed'

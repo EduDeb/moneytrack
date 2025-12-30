@@ -524,6 +524,32 @@ router.post('/link-all-to-account', async (req, res) => {
   }
 });
 
+// @route   POST /api/transactions/fix-missing-status
+// @desc    Corrigir transações que não têm campo status (adicionar 'confirmed')
+router.post('/fix-missing-status', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const collection = mongoose.connection.collection('transactions');
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+
+    // Atualizar transações sem status para 'confirmed'
+    const result = await collection.updateMany(
+      {
+        user: userId,
+        status: { $exists: false }
+      },
+      { $set: { status: 'confirmed' } }
+    );
+
+    res.json({
+      message: `${result.modifiedCount} transações corrigidas (status = confirmed)`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao corrigir status', error: error.message });
+  }
+});
+
 // @route   POST /api/transactions/fix-account-refs
 // @desc    Corrigir referências de account - vincular TODAS ao Banco Principal
 router.post('/fix-account-refs', async (req, res) => {

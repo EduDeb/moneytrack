@@ -191,6 +191,8 @@ function Layout() {
 
       {/* Sidebar */}
       <aside
+        role="navigation"
+        aria-label="Menu principal"
         style={{
           position: 'fixed',
           top: 0,
@@ -248,10 +250,10 @@ function Layout() {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, padding: '1rem', overflowY: 'auto' }}>
+        <nav aria-label="Navegação principal" style={{ flex: 1, padding: '1rem', overflowY: 'auto' }}>
           {navGroups.map((group, groupIndex) => (
-            <div key={group.title} style={{ marginBottom: groupIndex < navGroups.length - 1 ? '1.5rem' : 0 }}>
-              <p style={{
+            <div key={group.title} role="group" aria-labelledby={`nav-group-${groupIndex}`} style={{ marginBottom: groupIndex < navGroups.length - 1 ? '1.5rem' : 0 }}>
+              <p id={`nav-group-${groupIndex}`} style={{
                 fontSize: '0.6875rem',
                 fontWeight: '600',
                 color: colors.textSecondary,
@@ -267,6 +269,7 @@ function Layout() {
                   key={path}
                   to={path}
                   onClick={() => setSidebarOpen(false)}
+                  aria-label={`Ir para ${label}`}
                   style={({ isActive }) => ({
                     display: 'flex',
                     alignItems: 'center',

@@ -1,6 +1,8 @@
 import { useState, useEffect, useContext } from 'react'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import { ThemeContext } from '../contexts/ThemeContext'
+import { DashboardSkeleton, ChartSkeleton } from '../components/Skeleton'
 import {
   TrendingUp,
   TrendingDown,
@@ -171,10 +173,11 @@ function Dashboard() {
         month: now.getMonth() + 1,
         year: now.getFullYear()
       })
+      toast.success(`${bill.name} paga com sucesso!`)
       window.location.reload()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
-      alert(error.response?.data?.message || 'Erro ao pagar conta')
+      toast.error(error.response?.data?.message || 'Erro ao pagar conta')
     } finally {
       setPayingBill(null)
     }
@@ -263,11 +266,7 @@ function Dashboard() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    )
+    return <DashboardSkeleton />
   }
 
   const { summary, health, upcomingBills, topCategories, budgets, goals, accounts } = dashboardData || {}

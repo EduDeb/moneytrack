@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import {
   Tag,
   Plus,
@@ -108,8 +109,9 @@ function Categories() {
       fetchCategories()
       // Atualizar contexto global para que outras páginas vejam as mudanças
       refreshGlobalCategories()
+      toast.success(editingCategory ? 'Categoria atualizada!' : 'Categoria criada!')
     } catch (error) {
-      alert(error.response?.data?.message || 'Erro ao salvar categoria')
+      toast.error(error.response?.data?.message || 'Erro ao salvar categoria')
     }
   }
 
@@ -120,8 +122,9 @@ function Categories() {
       await api.delete(`/categories/${category._id}`)
       fetchCategories()
       refreshGlobalCategories()
+      toast.success('Categoria removida!')
     } catch (error) {
-      alert('Erro ao remover categoria')
+      toast.error('Erro ao remover categoria')
     }
   }
 
@@ -132,8 +135,9 @@ function Categories() {
       await api.post('/categories/reset')
       fetchCategories()
       refreshGlobalCategories()
+      toast.success('Categorias restauradas!')
     } catch (error) {
-      alert('Erro ao resetar categorias')
+      toast.error('Erro ao resetar categorias')
     }
   }
 

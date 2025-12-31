@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useRef, useMemo } from 'react'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import { Plus, Trash2, Edit2, X, Check, Home, Zap, Droplets, Wifi, Phone, Tv, Shield, CreditCard, Banknote, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import MonthSelector from '../components/MonthSelector'
@@ -202,7 +203,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
-      alert(error.response?.data?.message || 'Erro ao pagar conta')
+      toast.error(error.response?.data?.message || 'Erro ao pagar conta')
     }
   }
 
@@ -240,7 +241,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir deste mês:', error)
-      alert(error.response?.data?.message || 'Erro ao excluir')
+      toast.error(error.response?.data?.message || 'Erro ao excluir')
     }
   }
 
@@ -256,7 +257,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir recorrência:', error)
-      alert(error.response?.data?.message || 'Erro ao excluir')
+      toast.error(error.response?.data?.message || 'Erro ao excluir')
     }
   }
 
@@ -285,7 +286,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pular mês:', error)
-      alert(error.response?.data?.message || 'Erro ao pular mês')
+      toast.error(error.response?.data?.message || 'Erro ao pular mês')
     } finally {
       setIsProcessingAction(false)
     }
@@ -307,7 +308,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar com desconto:', error)
-      alert(error.response?.data?.message || 'Erro ao pagar com desconto')
+      toast.error(error.response?.data?.message || 'Erro ao pagar com desconto')
     } finally {
       setIsProcessingAction(false)
     }
@@ -329,7 +330,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao registrar pagamento parcial:', error)
-      alert(error.response?.data?.message || 'Erro ao registrar pagamento parcial')
+      toast.error(error.response?.data?.message || 'Erro ao registrar pagamento parcial')
     } finally {
       setIsProcessingAction(false)
     }
@@ -351,7 +352,7 @@ function Bills() {
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao desfazer alteração:', error)
-      alert(error.response?.data?.message || 'Erro ao desfazer alteração')
+      toast.error(error.response?.data?.message || 'Erro ao desfazer alteração')
     } finally {
       setIsProcessingAction(false)
     }
@@ -591,7 +592,7 @@ function Bills() {
 
     const pendingBills = bills.filter(b => selectedItems.includes(b._id) && !b.isPaid)
     if (pendingBills.length === 0) {
-      alert('Nenhuma conta pendente selecionada')
+      toast.error('Nenhuma conta pendente selecionada')
       return
     }
 
@@ -623,7 +624,9 @@ function Bills() {
     await fetchSummary()
 
     if (errorCount > 0) {
-      alert(`${successCount} conta(s) paga(s) com sucesso. ${errorCount} erro(s).`)
+      toast.error(`${successCount} paga(s), ${errorCount} erro(s)`)
+    } else if (successCount > 0) {
+      toast.success(`${successCount} conta(s) paga(s) com sucesso!`)
     }
   }
 
@@ -633,7 +636,7 @@ function Bills() {
 
     const paidBills = bills.filter(b => selectedItems.includes(b._id) && b.isPaid)
     if (paidBills.length === 0) {
-      alert('Nenhuma conta paga selecionada')
+      toast.error('Nenhuma conta paga selecionada')
       return
     }
 
@@ -664,7 +667,9 @@ function Bills() {
     await fetchSummary()
 
     if (errorCount > 0) {
-      alert(`${successCount} pagamento(s) cancelado(s). ${errorCount} erro(s).`)
+      toast.error(`${successCount} cancelado(s), ${errorCount} erro(s)`)
+    } else if (successCount > 0) {
+      toast.success(`${successCount} pagamento(s) cancelado(s)!`)
     }
   }
 

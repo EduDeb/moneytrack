@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import {
   FileText, Download, Upload, Calendar, ChevronLeft, ChevronRight,
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Filter,
@@ -123,9 +124,10 @@ function Reports() {
       link.download = `moneytrack_${dataType}_${new Date().toISOString().split('T')[0]}.${extensions[format]}`
       link.click()
       setShowExportModal(false)
+      toast.success('Exportação realizada com sucesso!')
     } catch (error) {
       console.error('Erro ao exportar:', error)
-      alert('Erro ao exportar. Tente novamente.')
+      toast.error('Erro ao exportar. Tente novamente.')
     }
   }
 
@@ -187,19 +189,19 @@ function Reports() {
 
       let message = response.data.message
       if (response.data.summary) {
-        message += `\n\nResumo:\n- Transações: ${response.data.summary.transactions}\n- Contas: ${response.data.summary.bills}`
+        message += ` | Transações: ${response.data.summary.transactions}, Contas: ${response.data.summary.bills}`
       }
       if (response.data.errors > 0) {
-        message += `\n\n${response.data.errors} registro(s) com erro.`
+        toast.error(`${response.data.errors} registro(s) com erro`)
       }
 
-      alert(message)
+      toast.success(message)
       setShowImportModal(false)
       setImportData('')
       setImportType('auto')
       fetchReport()
     } catch (error) {
-      alert('Erro ao importar: ' + (error.response?.data?.message || error.message))
+      toast.error('Erro ao importar: ' + (error.response?.data?.message || error.message))
     }
   }
 

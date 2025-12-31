@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import { ThemeContext } from '../contexts/ThemeContext'
 import {
   RefreshCw, Plus, Edit2, Trash2, Calendar, ArrowUpCircle, ArrowDownCircle,
@@ -280,7 +281,9 @@ export default function Recurring() {
     fetchData()
 
     if (errorCount > 0) {
-      alert(`${successCount} recorrência(s) excluída(s). ${errorCount} erro(s).`)
+      toast.error(`${successCount} excluída(s), ${errorCount} erro(s)`)
+    } else if (successCount > 0) {
+      toast.success(`${successCount} recorrência(s) excluída(s)!`)
     }
   }
 

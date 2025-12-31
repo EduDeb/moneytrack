@@ -1,10 +1,12 @@
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react'
 import api from '../services/api'
+import toast from 'react-hot-toast'
 import { Plus, Trash2, Edit2, X, Filter, TrendingUp, TrendingDown, Wallet, Search, Sparkles, CheckSquare, Square, XCircle, Check, Loader } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import { useCategories } from '../contexts/CategoriesContext'
 import MonthSelector from '../components/MonthSelector'
 import SortToggle from '../components/SortToggle'
+import { TransactionListSkeleton, CardSkeleton } from '../components/Skeleton'
 
 function Transactions() {
   const { colors, isDark } = useContext(ThemeContext)
@@ -166,17 +168,17 @@ function Transactions() {
     // Value overflow protection
     const amount = parseFloat(form.amount)
     if (isNaN(amount) || amount <= 0) {
-      alert('Por favor, insira um valor válido maior que zero.')
+      toast.error('Por favor, insira um valor válido maior que zero.')
       return
     }
     if (amount > 999999999.99) {
-      alert('O valor máximo permitido é R$ 999.999.999,99')
+      toast.error('O valor máximo permitido é R$ 999.999.999,99')
       return
     }
 
     // Description length limit
     if (form.description && form.description.length > 200) {
-      alert('A descrição deve ter no máximo 200 caracteres.')
+      toast.error('A descrição deve ter no máximo 200 caracteres.')
       return
     }
 
@@ -184,8 +186,10 @@ function Transactions() {
     try {
       if (editingTransaction) {
         await api.put(`/transactions/${editingTransaction._id}`, form)
+        toast.success('Transação atualizada com sucesso!')
       } else {
         await api.post('/transactions', form)
+        toast.success('Transação criada com sucesso!')
       }
 
       setShowModal(false)
@@ -195,7 +199,7 @@ function Transactions() {
       await Promise.all([fetchTransactions(), fetchSummary()])
     } catch (error) {
       console.error('Erro ao salvar transação:', error)
-      alert('Erro ao salvar transação. Tente novamente.')
+      toast.error('Erro ao salvar transação. Tente novamente.')
     } finally {
       setSubmitting(false)
     }
@@ -208,11 +212,12 @@ function Transactions() {
     setDeleting(id)
     try {
       await api.delete(`/transactions/${id}`)
+      toast.success('Transação excluída com sucesso!')
       // Atualizar tanto transações quanto resumo imediatamente
       await Promise.all([fetchTransactions(), fetchSummary()])
     } catch (error) {
       console.error('Erro ao excluir transação:', error)
-      alert('Erro ao excluir transação. Tente novamente.')
+      toast.error('Erro ao excluir transação. Tente novamente.')
     } finally {
       setDeleting(null)
     }
@@ -336,7 +341,9 @@ function Transactions() {
     await Promise.all([fetchTransactions(), fetchSummary()])
 
     if (errorCount > 0) {
-      alert(`${successCount} transação(ões) excluída(s). ${errorCount} erro(s).`)
+      toast.error(`${successCount} excluída(s), ${errorCount} erro(s)`)
+    } else {
+      toast.success(`${successCount} transação(ões) excluída(s)!`)
     }
   }
 
@@ -567,9 +574,7 @@ function Transactions() {
 
       {/* Lista de Transações */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '48px', color: colors.textSecondary }}>
-          Carregando...
-        </div>
+        <TransactionListSkeleton count={8} />
       ) : filteredTransactions.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: colors.textSecondary, backgroundColor: colors.backgroundCard, borderRadius: '12px' }}>
           <Wallet size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
@@ -659,6 +664,8 @@ function Transactions() {
                     <button
                       onClick={(e) => { e.stopPropagation(); openEditModal(t) }}
                       disabled={deleting === t._id}
+                      aria-label={`Editar transação: ${t.description}`}
+                      title="Editar transação"
                       style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, opacity: deleting === t._id ? 0.5 : 1 }}
                     >
                       <Edit2 size={16} />
@@ -666,6 +673,8 @@ function Transactions() {
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(t._id) }}
                       disabled={deleting === t._id}
+                      aria-label={`Excluir transação: ${t.description}`}
+                      title="Excluir transação"
                       style={{ padding: '4px', background: 'none', border: 'none', cursor: deleting === t._id ? 'not-allowed' : 'pointer', color: deleting === t._id ? '#ef4444' : colors.textSecondary, marginLeft: '8px' }}
                     >
                       {deleting === t._id ? (

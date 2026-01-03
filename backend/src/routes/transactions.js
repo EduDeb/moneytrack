@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const { protect, validateObjectId } = require('../middleware/auth');
 const { normalizeToUTC } = require('../utils/dateHelper');
 const { roundMoney, sumMoney, subtractMoney } = require('../utils/moneyHelper');
+const { findMappedCategory } = require('../config/categoryMappings');
 
 // Todas as rotas requerem autenticação
 router.use(protect);
@@ -256,7 +257,7 @@ router.get('/analytics', async (req, res) => {
 });
 
 // @route   GET /api/transactions/suggest-category
-// @desc    Sugerir categoria baseada no histórico de descrições
+// @desc    Sugerir categoria baseada em mapeamento fixo + histórico de descrições
 router.get('/suggest-category', async (req, res) => {
   try {
     const { description } = req.query;
@@ -267,7 +268,24 @@ router.get('/suggest-category', async (req, res) => {
 
     const searchTerm = description.trim().toLowerCase();
 
-    // 1. Buscar correspondência EXATA primeiro (case insensitive)
+    // 1. PRIORIDADE: Verificar mapeamento fixo de categorias
+    const mappedCategory = findMappedCategory(description);
+    if (mappedCategory) {
+      return res.json({
+        category: mappedCategory.category,
+        type: mappedCategory.type,
+        confidence: mappedCategory.confidence,
+        matchType: mappedCategory.matchType,
+        suggestions: [{
+          description: description,
+          category: mappedCategory.category,
+          type: mappedCategory.type,
+          count: 1
+        }]
+      });
+    }
+
+    // 2. Buscar correspondência EXATA no histórico (case insensitive)
     const exactMatch = await Transaction.findOne({
       user: req.user._id,
       description: { $regex: new RegExp(`^${searchTerm}$`, 'i') }
@@ -278,7 +296,7 @@ router.get('/suggest-category', async (req, res) => {
         category: exactMatch.category,
         type: exactMatch.type,
         confidence: 100,
-        matchType: 'exact',
+        matchType: 'history_exact',
         suggestions: [{
           description: exactMatch.description,
           category: exactMatch.category,
@@ -288,7 +306,7 @@ router.get('/suggest-category', async (req, res) => {
       });
     }
 
-    // 2. Buscar correspondência PARCIAL (começa com ou contém)
+    // 3. Buscar correspondência PARCIAL no histórico (começa com ou contém)
     const partialMatches = await Transaction.aggregate([
       {
         $match: {
@@ -323,7 +341,7 @@ router.get('/suggest-category', async (req, res) => {
         category: bestMatch._id.category,
         type: bestMatch._id.type,
         confidence: partialMatches.length === 1 ? 90 : 70,
-        matchType: 'partial',
+        matchType: 'history_partial',
         suggestions: partialMatches.map(m => ({
           description: m.originalDescription,
           category: m._id.category,
@@ -333,7 +351,7 @@ router.get('/suggest-category', async (req, res) => {
       });
     }
 
-    // 3. Nenhuma correspondência encontrada
+    // 4. Nenhuma correspondência encontrada
     return res.json({
       category: null,
       type: null,

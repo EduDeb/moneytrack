@@ -104,10 +104,14 @@ router.get('/', async (req, res) => {
     // Criar um Map com pagamentos por recorrência e dia
     const paidRecurringMap = new Map()
     payments.forEach(p => {
-      const key = `${p.recurring.toString()}_${p.paidAt ? new Date(p.paidAt).getUTCDate() : 0}`
+      // Para recorrências semanais, usar dueDay; senão usar paidAt
+      const day = p.dueDay || (p.paidAt ? new Date(p.paidAt).getUTCDate() : 0)
+      const key = `${p.recurring.toString()}_${day}`
       paidRecurringMap.set(key, true)
-      // Também marcar por recurring ID simples para compatibilidade
-      paidRecurringMap.set(p.recurring.toString(), true)
+      // Também marcar por recurring ID simples para compatibilidade (mensais)
+      if (!p.dueDay) {
+        paidRecurringMap.set(p.recurring.toString(), true)
+      }
     })
 
     // Converter recorrências para formato de bill

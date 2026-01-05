@@ -1088,23 +1088,40 @@ router.post('/:id/pay', async (req, res) => {
 
 // @route   POST /api/bills/:id/unpay
 // @desc    Cancelar pagamento de uma conta (desfazer)
-router.post('/:id/unpay', validateObjectId(), async (req, res) => {
+router.post('/:id/unpay', async (req, res) => {
   try {
-    const { isFromRecurring, month, year } = req.body
+    const { isFromRecurring, month, year, dueDay } = req.body
 
     // Determinar mês/ano do pagamento
     const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
     const paymentYear = year ? parseInt(year) : new Date().getFullYear()
 
+    // Extrair ID real se for ID virtual de recorrência semanal
+    let recurringId = req.params.id
+    let weekNumber = null
+    if (req.params.id.includes('_week')) {
+      const parts = req.params.id.split('_week')
+      recurringId = parts[0]
+      weekNumber = parseInt(parts[1])
+    }
+
     // Se for de recorrência
     if (isFromRecurring) {
-      // Buscar e remover o pagamento da tabela RecurringPayment
-      const payment = await RecurringPayment.findOneAndDelete({
+      // Query para encontrar o pagamento
+      const paymentQuery = {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: paymentMonth,
         year: paymentYear
-      })
+      }
+
+      // Para semanais, incluir dueDay na query
+      if (weekNumber && dueDay) {
+        paymentQuery.dueDay = parseInt(dueDay)
+      }
+
+      // Buscar e remover o pagamento da tabela RecurringPayment
+      const payment = await RecurringPayment.findOneAndDelete(paymentQuery)
 
       if (!payment) {
         return res.status(404).json({ message: 'Pagamento não encontrado para este mês' })

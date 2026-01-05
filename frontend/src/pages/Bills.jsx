@@ -197,7 +197,8 @@ function Bills() {
       await api.post(`/bills/${bill._id}/pay`, {
         isFromRecurring: bill.isFromRecurring || false,
         month: selectedMonth,
-        year: selectedYear
+        year: selectedYear,
+        dueDay: bill.dueDay // Enviar dia de vencimento para recorrências semanais
       })
       await fetchBills()
       await fetchSummary()

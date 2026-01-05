@@ -924,45 +924,75 @@ router.delete('/:id/override', validateObjectId(), async (req, res) => {
 
 // @route   POST /api/bills/:id/pay
 // @desc    Marcar conta como paga e criar transação (funciona para bills e recorrências)
-router.post('/:id/pay', validateObjectId(), async (req, res) => {
+router.post('/:id/pay', async (req, res) => {
   try {
-    const { isFromRecurring, month, year } = req.body
+    const { isFromRecurring, month, year, dueDay } = req.body
 
     // Determinar mês/ano do pagamento (usa o enviado ou o atual)
     const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
     const paymentYear = year ? parseInt(year) : new Date().getFullYear()
 
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    let weekNumber = null
+    if (req.params.id.includes('_week')) {
+      const parts = req.params.id.split('_week')
+      recurringId = parts[0]
+      weekNumber = parseInt(parts[1])
+    }
+
     // Se for de recorrência
     if (isFromRecurring) {
-      const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+      const recurring = await Recurring.findOne({ _id: recurringId, user: req.user._id })
 
       if (!recurring) {
         return res.status(404).json({ message: 'Recorrência não encontrada' })
       }
 
-      // Verificar se já foi pago neste mês
-      const existingPayment = await RecurringPayment.findOne({
+      // Para recorrências semanais, verificar pagamento por dia específico
+      // Para mensais, verificar por mês
+      const paymentQuery = {
         user: req.user._id,
         recurring: recurring._id,
         month: paymentMonth,
         year: paymentYear
-      })
-
-      if (existingPayment) {
-        return res.status(400).json({ message: 'Esta conta já foi paga neste mês' })
       }
 
-      // Calcular a data da transação (dia de vencimento no mês selecionado)
-      const dueDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
+      // Se for semanal, adicionar o dia do vencimento na query
+      if (weekNumber && dueDay) {
+        paymentQuery.dueDay = parseInt(dueDay)
+      }
+
+      const existingPayment = await RecurringPayment.findOne(paymentQuery)
+
+      if (existingPayment) {
+        return res.status(400).json({ message: 'Esta conta já foi paga' })
+      }
+
+      // Calcular a data da transação
+      let transactionDay
+      if (weekNumber && dueDay) {
+        // Para semanal, usar o dueDay enviado
+        transactionDay = parseInt(dueDay)
+      } else {
+        // Para mensal, usar dayOfMonth da recorrência
+        transactionDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
+      }
+
       const lastDayOfMonth = new Date(paymentYear, paymentMonth, 0).getDate()
-      const transactionDate = new Date(paymentYear, paymentMonth - 1, Math.min(dueDay, lastDayOfMonth), 12, 0, 0)
+      const transactionDate = new Date(paymentYear, paymentMonth - 1, Math.min(transactionDay, lastDayOfMonth), 12, 0, 0)
+
+      // Descrição inclui número da semana se for semanal
+      const description = weekNumber
+        ? `${recurring.name} (Sem ${weekNumber})`
+        : recurring.name
 
       // Criar transação
       const transaction = await Transaction.create({
         user: req.user._id,
         type: recurring.type,
         category: recurring.category,
-        description: recurring.name,
+        description: description,
         amount: recurring.amount,
         account: recurring.account,
         date: transactionDate,
@@ -970,14 +1000,22 @@ router.post('/:id/pay', validateObjectId(), async (req, res) => {
       })
 
       // Registrar o pagamento na tabela RecurringPayment
-      const payment = await RecurringPayment.create({
+      const paymentData = {
         user: req.user._id,
         recurring: recurring._id,
         month: paymentMonth,
         year: paymentYear,
         transaction: transaction._id,
-        amountPaid: recurring.amount
-      })
+        amountPaid: recurring.amount,
+        paidAt: transactionDate
+      }
+
+      // Adicionar dueDay para recorrências semanais
+      if (weekNumber && dueDay) {
+        paymentData.dueDay = parseInt(dueDay)
+      }
+
+      const payment = await RecurringPayment.create(paymentData)
 
       return res.json({
         payment,

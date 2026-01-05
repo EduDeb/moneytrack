@@ -104,13 +104,16 @@ router.get('/', async (req, res) => {
     // Criar um Map com pagamentos por recorrência e dia
     const paidRecurringMap = new Map()
     payments.forEach(p => {
-      // Para recorrências semanais, usar dueDay; senão usar paidAt
-      const day = p.dueDay || (p.paidAt ? new Date(p.paidAt).getUTCDate() : 0)
-      const key = `${p.recurring.toString()}_${day}`
-      paidRecurringMap.set(key, true)
-      // Também marcar por recurring ID simples para compatibilidade (mensais)
-      if (!p.dueDay) {
+      // Para recorrências semanais, usar dueDay; senão marcar apenas por ID
+      if (p.dueDay) {
+        // Semanal: usar dueDay
+        const key = `${p.recurring.toString()}_${p.dueDay}`
+        paidRecurringMap.set(key, true)
+        console.log(`[DEBUG PAID] Semanal pago: ${key}`)
+      } else {
+        // Mensal: usar apenas o ID
         paidRecurringMap.set(p.recurring.toString(), true)
+        console.log(`[DEBUG PAID] Mensal pago: ${p.recurring.toString()}`)
       }
     })
 
@@ -153,6 +156,7 @@ router.get('/', async (req, res) => {
             // Verificar se esta semana específica foi paga
             const paymentKey = `${r._id.toString()}_${currentDay}`
             const isPaidThisWeek = paidRecurringMap.has(paymentKey)
+            console.log(`[DEBUG CHECK] Verificando semana: ${paymentKey}, pago: ${isPaidThisWeek}`)
 
             // Usar função de urgência baseada na semana calendário
             const urgency = calculateUrgency(dueDate, isPaidThisWeek)
@@ -932,6 +936,8 @@ router.post('/:id/pay', async (req, res) => {
   try {
     const { isFromRecurring, month, year, dueDay } = req.body
 
+    console.log(`[DEBUG PAY] Recebido: id=${req.params.id}, isFromRecurring=${isFromRecurring}, month=${month}, year=${year}, dueDay=${dueDay}`)
+
     // Determinar mês/ano do pagamento (usa o enviado ou o atual)
     const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
     const paymentYear = year ? parseInt(year) : new Date().getFullYear()
@@ -943,6 +949,7 @@ router.post('/:id/pay', async (req, res) => {
       const parts = req.params.id.split('_week')
       recurringId = parts[0]
       weekNumber = parseInt(parts[1])
+      console.log(`[DEBUG PAY] Semanal detectado: recurringId=${recurringId}, weekNumber=${weekNumber}`)
     }
 
     // Se for de recorrência
@@ -973,18 +980,10 @@ router.post('/:id/pay', async (req, res) => {
         return res.status(400).json({ message: 'Esta conta já foi paga' })
       }
 
-      // Calcular a data da transação
-      let transactionDay
-      if (weekNumber && dueDay) {
-        // Para semanal, usar o dueDay enviado
-        transactionDay = parseInt(dueDay)
-      } else {
-        // Para mensal, usar dayOfMonth da recorrência
-        transactionDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
-      }
+      // Data da transação = HOJE (quando o pagamento foi feito)
+      const transactionDate = new Date()
 
-      const lastDayOfMonth = new Date(paymentYear, paymentMonth, 0).getDate()
-      const transactionDate = new Date(paymentYear, paymentMonth - 1, Math.min(transactionDay, lastDayOfMonth), 12, 0, 0)
+      // dueDay é usado apenas para identificar qual semana foi paga, não afeta a data da transação
 
       // Descrição inclui número da semana se for semanal
       const description = weekNumber
@@ -1019,7 +1018,9 @@ router.post('/:id/pay', async (req, res) => {
         paymentData.dueDay = parseInt(dueDay)
       }
 
+      console.log(`[DEBUG SAVE] Salvando pagamento:`, JSON.stringify(paymentData, null, 2))
       const payment = await RecurringPayment.create(paymentData)
+      console.log(`[DEBUG SAVE] Pagamento criado com ID: ${payment._id}, dueDay: ${payment.dueDay}`)
 
       return res.json({
         payment,

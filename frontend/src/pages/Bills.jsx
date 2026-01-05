@@ -652,7 +652,8 @@ function Bills() {
         await api.post(`/bills/${bill._id}/unpay`, {
           isFromRecurring: bill.isFromRecurring || false,
           month: selectedMonth,
-          year: selectedYear
+          year: selectedYear,
+          dueDay: bill.dueDay // Necessário para recorrências semanais
         })
         successCount++
       } catch (error) {

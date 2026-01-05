@@ -289,9 +289,28 @@ router.put('/:id', async (req, res) => {
     // Recalcular nextDueDate se o dia foi alterado
     if (dayChanged || startDateChanged) {
       const now = new Date()
+      // Usar apenas a data, ignorando a hora (para comparações corretas)
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
       const frequency = recurring.frequency
 
-      if (frequency === 'monthly' && recurring.dayOfMonth) {
+      // Se startDate foi fornecido explicitamente, usar ele como base
+      if (req.body.startDate) {
+        const providedStartDate = new Date(req.body.startDate)
+        // Ajustar para meio-dia para evitar problemas de timezone
+        providedStartDate.setHours(12, 0, 0, 0)
+
+        recurring.startDate = providedStartDate
+        recurring.nextDueDate = providedStartDate
+
+        // Atualizar dayOfMonth/dayOfWeek baseado na data fornecida
+        if (frequency === 'monthly') {
+          recurring.dayOfMonth = providedStartDate.getDate()
+        } else if (frequency === 'weekly') {
+          recurring.dayOfWeek = providedStartDate.getDay()
+        }
+
+        console.log(`[RECURRING UPDATE] startDate definido para: ${providedStartDate.toISOString()}`)
+      } else if (frequency === 'monthly' && recurring.dayOfMonth) {
         const year = now.getFullYear()
         const month = now.getMonth()
         const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
@@ -299,23 +318,21 @@ router.put('/:id', async (req, res) => {
 
         let nextDueDate = new Date(year, month, actualDay, 12, 0, 0)
 
-        // Se a data já passou neste mês, avançar para o próximo
-        if (nextDueDate < now) {
+        // Se a data já passou neste mês (comparando apenas datas, não horas)
+        const dueDateOnly = new Date(year, month, actualDay, 0, 0, 0)
+        if (dueDateOnly < todayStart) {
           nextDueDate.setMonth(nextDueDate.getMonth() + 1)
           const newLastDay = new Date(nextDueDate.getFullYear(), nextDueDate.getMonth() + 1, 0).getDate()
           nextDueDate.setDate(Math.min(recurring.dayOfMonth, newLastDay))
         }
 
         recurring.nextDueDate = nextDueDate
-        recurring.startDate = nextDueDate
+        // Só atualizar startDate se não houver um startDate existente
+        if (!recurring.startDate) {
+          recurring.startDate = nextDueDate
+        }
       } else if (frequency === 'weekly') {
-        // Para semanal, usar startDate se fornecido, senão calcular próximo dia da semana
-        if (req.body.startDate) {
-          const newStartDate = new Date(req.body.startDate)
-          recurring.startDate = newStartDate
-          recurring.nextDueDate = newStartDate
-          recurring.dayOfWeek = newStartDate.getDay()
-        } else if (recurring.dayOfWeek !== undefined) {
+        if (recurring.dayOfWeek !== undefined) {
           const currentDayOfWeek = now.getDay()
           let daysUntilTarget = (recurring.dayOfWeek - currentDayOfWeek + 7) % 7
           if (daysUntilTarget === 0) daysUntilTarget = 7 // Próxima semana se for hoje
@@ -325,7 +342,9 @@ router.put('/:id', async (req, res) => {
           nextDueDate.setHours(12, 0, 0, 0)
 
           recurring.nextDueDate = nextDueDate
-          recurring.startDate = nextDueDate
+          if (!recurring.startDate) {
+            recurring.startDate = nextDueDate
+          }
         }
       }
     }

@@ -104,16 +104,24 @@ router.get('/', async (req, res) => {
     // Criar um Map com pagamentos por recorrência e dia
     const paidRecurringMap = new Map()
     payments.forEach(p => {
-      // Para recorrências semanais, usar dueDay; senão marcar apenas por ID
+      const recurringKey = p.recurring.toString()
+
+      // Para recorrências semanais, usar dueDay
       if (p.dueDay) {
-        // Semanal: usar dueDay
-        const key = `${p.recurring.toString()}_${p.dueDay}`
+        const key = `${recurringKey}_${p.dueDay}`
         paidRecurringMap.set(key, true)
         console.log(`[DEBUG PAID] Semanal pago: ${key}`)
-      } else {
-        // Mensal: usar apenas o ID
-        paidRecurringMap.set(p.recurring.toString(), true)
-        console.log(`[DEBUG PAID] Mensal pago: ${p.recurring.toString()}`)
+      }
+
+      // Sempre marcar por ID também (para mensais e como fallback para semanais antigos)
+      // Isso garante que pagamentos antigos sem dueDay não fiquem "perdidos"
+      if (!paidRecurringMap.has(recurringKey)) {
+        paidRecurringMap.set(recurringKey, {
+          paidAt: p.paidAt,
+          month: p.month,
+          year: p.year
+        })
+        console.log(`[DEBUG PAID] Mensal/Fallback: ${recurringKey}`)
       }
     })
 
@@ -154,8 +162,26 @@ router.get('/', async (req, res) => {
             const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
 
             // Verificar se esta semana específica foi paga
-            const paymentKey = `${r._id.toString()}_${currentDay}`
-            const isPaidThisWeek = paidRecurringMap.has(paymentKey)
+            const recurringKey = r._id.toString()
+            const paymentKey = `${recurringKey}_${currentDay}`
+            let isPaidThisWeek = paidRecurringMap.has(paymentKey)
+
+            // Fallback: verificar se há pagamento antigo sem dueDay
+            // Isso acontece com pagamentos criados antes da correção
+            if (!isPaidThisWeek) {
+              const fallbackPayment = paidRecurringMap.get(recurringKey)
+              if (fallbackPayment && typeof fallbackPayment === 'object' && fallbackPayment.paidAt) {
+                // Verificar se o pagamento foi feito próximo ao dia de vencimento desta semana
+                const paidDate = new Date(fallbackPayment.paidAt)
+                const paidDay = paidDate.getUTCDate()
+                // Se foi pago no mesmo dia ou em até 3 dias de diferença, considerar como esta semana
+                if (Math.abs(paidDay - currentDay) <= 3) {
+                  isPaidThisWeek = true
+                  console.log(`[DEBUG CHECK] Fallback match: pago em ${paidDay}, vencimento em ${currentDay}`)
+                }
+              }
+            }
+
             console.log(`[DEBUG CHECK] Verificando semana: ${paymentKey}, pago: ${isPaidThisWeek}`)
 
             // Usar função de urgência baseada na semana calendário

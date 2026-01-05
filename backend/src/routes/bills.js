@@ -1193,6 +1193,98 @@ router.delete('/:id', validateObjectId(), async (req, res) => {
   }
 })
 
+// @route   POST /api/bills/:id/fix-payment
+// @desc    Corrigir pagamento existente (atualizar dueDay)
+router.post('/:id/fix-payment', async (req, res) => {
+  try {
+    const { month, year, dueDay } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      const parts = req.params.id.split('_week')
+      recurringId = parts[0]
+    }
+
+    const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const paymentYear = year ? parseInt(year) : new Date().getFullYear()
+
+    // Buscar pagamento existente
+    const payment = await RecurringPayment.findOne({
+      user: req.user._id,
+      recurring: recurringId,
+      month: paymentMonth,
+      year: paymentYear
+    })
+
+    if (!payment) {
+      return res.status(404).json({ message: 'Pagamento não encontrado para este mês' })
+    }
+
+    // Atualizar dueDay se fornecido
+    if (dueDay) {
+      payment.dueDay = parseInt(dueDay)
+      await payment.save()
+    }
+
+    res.json({
+      message: 'Pagamento corrigido',
+      payment: {
+        _id: payment._id,
+        recurring: payment.recurring,
+        month: payment.month,
+        year: payment.year,
+        dueDay: payment.dueDay,
+        amountPaid: payment.amountPaid,
+        paidAt: payment.paidAt
+      }
+    })
+  } catch (error) {
+    console.error('[FIX PAYMENT ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// @route   DELETE /api/bills/:id/delete-payment
+// @desc    Deletar pagamento para poder pagar novamente
+router.delete('/:id/delete-payment', async (req, res) => {
+  try {
+    const { month, year } = req.body
+
+    // Extrair ID real se for ID virtual
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      const parts = req.params.id.split('_week')
+      recurringId = parts[0]
+    }
+
+    const paymentMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const paymentYear = year ? parseInt(year) : new Date().getFullYear()
+
+    // Deletar pagamento
+    const payment = await RecurringPayment.findOneAndDelete({
+      user: req.user._id,
+      recurring: recurringId,
+      month: paymentMonth,
+      year: paymentYear
+    })
+
+    if (!payment) {
+      return res.status(404).json({ message: 'Pagamento não encontrado' })
+    }
+
+    // Deletar transação associada se existir
+    if (payment.transaction) {
+      await Transaction.findByIdAndDelete(payment.transaction)
+    }
+
+    res.json({ message: 'Pagamento deletado. Você pode pagar novamente.' })
+  } catch (error) {
+    console.error('[DELETE PAYMENT ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // @route   GET /api/bills/debug-payments
 // @desc    Debug: Ver pagamentos do mês atual
 router.get('/debug-payments', async (req, res) => {

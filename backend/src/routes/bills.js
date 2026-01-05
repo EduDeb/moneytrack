@@ -1193,4 +1193,41 @@ router.delete('/:id', validateObjectId(), async (req, res) => {
   }
 })
 
+// @route   GET /api/bills/debug-payments
+// @desc    Debug: Ver pagamentos do mês atual
+router.get('/debug-payments', async (req, res) => {
+  try {
+    const { month, year } = req.query
+    const currentMonth = month ? parseInt(month) : new Date().getUTCMonth() + 1
+    const currentYear = year ? parseInt(year) : new Date().getUTCFullYear()
+
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    }).populate('recurring', 'name frequency dayOfWeek')
+
+    res.json({
+      month: currentMonth,
+      year: currentYear,
+      count: payments.length,
+      payments: payments.map(p => ({
+        _id: p._id,
+        recurringId: p.recurring?._id,
+        recurringName: p.recurring?.name,
+        frequency: p.recurring?.frequency,
+        month: p.month,
+        year: p.year,
+        dueDay: p.dueDay,
+        amountPaid: p.amountPaid,
+        paidAt: p.paidAt,
+        createdAt: p.createdAt
+      }))
+    })
+  } catch (error) {
+    console.error('[DEBUG ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 module.exports = router

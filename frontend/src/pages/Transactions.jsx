@@ -184,11 +184,15 @@ function Transactions() {
 
     setSubmitting(true)
     try {
+      const dataToSend = {
+        ...form,
+        amount: parseFloat(form.amount)
+      }
       if (editingTransaction) {
-        await api.put(`/transactions/${editingTransaction._id}`, form)
+        await api.put(`/transactions/${editingTransaction._id}`, dataToSend)
         toast.success('Transação atualizada com sucesso!')
       } else {
-        await api.post('/transactions', form)
+        await api.post('/transactions', dataToSend)
         toast.success('Transação criada com sucesso!')
       }
 

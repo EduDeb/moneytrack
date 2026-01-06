@@ -677,16 +677,22 @@ router.put('/:id/override', async (req, res) => {
 
 // @route   POST /api/bills/:id/skip
 // @desc    Pular uma conta apenas neste mês específico (não apaga a recorrência)
-router.post('/:id/skip', validateObjectId(), async (req, res) => {
+router.post('/:id/skip', async (req, res) => {
   try {
     const { month, year, notes } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      recurringId = req.params.id.split('_week')[0]
+    }
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
     }
 
     // Verificar se a recorrência existe
-    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+    const recurring = await Recurring.findOne({ _id: recurringId, user: req.user._id })
 
     if (!recurring) {
       return res.status(404).json({ message: 'Recorrência não encontrada' })
@@ -696,13 +702,13 @@ router.post('/:id/skip', validateObjectId(), async (req, res) => {
     const override = await RecurringOverride.findOneAndUpdate(
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year)
       },
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year),
         type: 'skip',
@@ -724,9 +730,15 @@ router.post('/:id/skip', validateObjectId(), async (req, res) => {
 
 // @route   POST /api/bills/:id/pay-with-discount
 // @desc    Pagar conta com desconto apenas neste mês
-router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
+router.post('/:id/pay-with-discount', async (req, res) => {
   try {
     const { month, year, discountAmount, notes } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      recurringId = req.params.id.split('_week')[0]
+    }
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
@@ -737,7 +749,7 @@ router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
     }
 
     // Verificar se a recorrência existe
-    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+    const recurring = await Recurring.findOne({ _id: recurringId, user: req.user._id })
 
     if (!recurring) {
       return res.status(404).json({ message: 'Recorrência não encontrada' })
@@ -764,13 +776,13 @@ router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
     await RecurringOverride.findOneAndUpdate(
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year)
       },
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year),
         type: 'custom_amount',
@@ -822,9 +834,15 @@ router.post('/:id/pay-with-discount', validateObjectId(), async (req, res) => {
 
 // @route   POST /api/bills/:id/pay-partial
 // @desc    Registrar pagamento parcial de uma conta
-router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
+router.post('/:id/pay-partial', async (req, res) => {
   try {
     const { month, year, paidAmount, notes } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      recurringId = req.params.id.split('_week')[0]
+    }
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
@@ -835,7 +853,7 @@ router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
     }
 
     // Verificar se a recorrência existe
-    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+    const recurring = await Recurring.findOne({ _id: recurringId, user: req.user._id })
 
     if (!recurring) {
       return res.status(404).json({ message: 'Recorrência não encontrada' })
@@ -844,7 +862,7 @@ router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
     // Verificar se já existe um override para este mês
     let override = await RecurringOverride.findOne({
       user: req.user._id,
-      recurring: req.params.id,
+      recurring: recurringId,
       month: parseInt(month),
       year: parseInt(year)
     })
@@ -864,13 +882,13 @@ router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
     override = await RecurringOverride.findOneAndUpdate(
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year)
       },
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year),
         type: 'partial_payment',
@@ -937,9 +955,15 @@ router.post('/:id/pay-partial', validateObjectId(), async (req, res) => {
 
 // @route   DELETE /api/bills/:id/override
 // @desc    Remover sobrescrita e voltar ao valor original da recorrência
-router.delete('/:id/override', validateObjectId(), async (req, res) => {
+router.delete('/:id/override', async (req, res) => {
   try {
     const { month, year } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      recurringId = req.params.id.split('_week')[0]
+    }
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
@@ -947,7 +971,7 @@ router.delete('/:id/override', validateObjectId(), async (req, res) => {
 
     const result = await RecurringOverride.findOneAndDelete({
       user: req.user._id,
-      recurring: req.params.id,
+      recurring: recurringId,
       month: parseInt(month),
       year: parseInt(year)
     })

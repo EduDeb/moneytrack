@@ -682,9 +682,51 @@ router.put('/:id/override', async (req, res) => {
       { upsert: true, new: true }
     )
 
+    // Se já existem pagamentos para este mês, atualizar as transações associadas
+    const existingPayments = await RecurringPayment.find({
+      user: req.user._id,
+      recurring: recurringId,
+      month: parseInt(month),
+      year: parseInt(year)
+    })
+
+    let transactionsUpdated = 0
+    for (const payment of existingPayments) {
+      if (payment.transaction) {
+        const updateData = {}
+        if (amount !== undefined) {
+          updateData.amount = parseFloat(amount)
+        }
+        if (name !== undefined) {
+          // Manter o sufixo (Sem X) se existir
+          const existingTx = await Transaction.findById(payment.transaction)
+          if (existingTx) {
+            const weekMatch = existingTx.description.match(/\(Sem \d+\)$/)
+            updateData.description = weekMatch ? `${name} ${weekMatch[0]}` : name
+          }
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await Transaction.findByIdAndUpdate(payment.transaction, updateData)
+          transactionsUpdated++
+        }
+      }
+
+      // Atualizar também o amountPaid no pagamento
+      if (amount !== undefined) {
+        payment.amountPaid = parseFloat(amount)
+        await payment.save()
+      }
+    }
+
+    console.log(`[OVERRIDE] ${transactionsUpdated} transações atualizadas para o novo valor`)
+
     res.json({
-      message: 'Valor atualizado apenas para este mês',
+      message: transactionsUpdated > 0
+        ? `Valor atualizado! ${transactionsUpdated} transação(ões) também atualizada(s).`
+        : 'Valor atualizado apenas para este mês',
       override,
+      transactionsUpdated,
       recurring: {
         name: recurring.name,
         originalAmount: recurring.amount

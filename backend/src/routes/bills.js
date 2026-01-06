@@ -184,14 +184,34 @@ router.get('/', async (req, res) => {
 
             console.log(`[DEBUG CHECK] Verificando semana: ${paymentKey}, pago: ${isPaidThisWeek}`)
 
+            // Verificar se há sobrescrita para este mês (semanais usam o mesmo override)
+            const override = overridesMap.get(r._id.toString())
+
+            // Se for do tipo 'skip', não mostrar nenhuma semana desta recorrência neste mês
+            if (override?.type === 'skip') {
+              break // Sai do while loop para esta recorrência
+            }
+
+            const finalAmount = override?.amount ?? r.amount
+            const finalName = override?.name ?? r.name
+            const isPartialPayment = override?.type === 'partial_payment'
+            const paidAmount = override?.paidAmount || 0
+
             // Usar função de urgência baseada na semana calendário
             const urgency = calculateUrgency(dueDate, isPaidThisWeek)
 
             recurringBills.push({
               _id: `${r._id}_week${weekNumber}`,
-              name: `${r.name} (Sem ${weekNumber})`,
+              name: `${finalName} (Sem ${weekNumber})`,
               category: r.category,
-              amount: r.amount,
+              amount: finalAmount,
+              originalAmount: r.amount,
+              hasOverride: !!override,
+              overrideType: override?.type,
+              overrideNotes: override?.notes,
+              isPartialPayment,
+              paidAmount,
+              remainingAmount: isPartialPayment ? finalAmount : null,
               dueDay: currentDay,
               isRecurring: true,
               isPaid: isPaidThisWeek,

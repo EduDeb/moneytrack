@@ -75,9 +75,10 @@ function Bills() {
   // Modal de ações da conta
   const [showActionModal, setShowActionModal] = useState(false)
   const [selectedBill, setSelectedBill] = useState(null)
-  const [actionType, setActionType] = useState(null) // 'discount', 'partial', 'skip'
+  const [actionType, setActionType] = useState(null) // 'discount', 'partial', 'skip', 'change_value'
   const [discountAmount, setDiscountAmount] = useState('')
   const [partialAmount, setPartialAmount] = useState('')
+  const [customAmount, setCustomAmount] = useState('') // Novo valor personalizado
   const [actionNotes, setActionNotes] = useState('')
   const [isProcessingAction, setIsProcessingAction] = useState(false)
 
@@ -332,6 +333,31 @@ function Bills() {
     } catch (error) {
       console.error('Erro ao registrar pagamento parcial:', error)
       toast.error(error.response?.data?.message || 'Erro ao registrar pagamento parcial')
+    } finally {
+      setIsProcessingAction(false)
+    }
+  }
+
+  // Alterar valor (aumentar ou diminuir)
+  const handleChangeValue = async () => {
+    if (!selectedBill || !customAmount) return
+    setIsProcessingAction(true)
+    try {
+      await api.put(`/bills/${selectedBill._id}/override`, {
+        month: selectedMonth,
+        year: selectedYear,
+        amount: parseFloat(customAmount),
+        notes: actionNotes || `Valor alterado para R$ ${parseFloat(customAmount).toFixed(2)}`
+      })
+      setShowActionModal(false)
+      setCustomAmount('')
+      setActionNotes('')
+      await fetchBills()
+      await fetchSummary()
+      toast.success('Valor alterado para este mês!')
+    } catch (error) {
+      console.error('Erro ao alterar valor:', error)
+      toast.error(error.response?.data?.message || 'Erro ao alterar valor')
     } finally {
       setIsProcessingAction(false)
     }
@@ -1866,6 +1892,43 @@ Netflix - R$ 55,90"
                   </div>
                 </button>
 
+                {/* Alterar valor */}
+                <button
+                  onClick={() => {
+                    setCustomAmount(selectedBill?.amount?.toString() || '')
+                    setActionType('change_value')
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.border}`,
+                    backgroundColor: colors.backgroundCard,
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: '#e0e7ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Edit2 size={20} color="#6366f1" />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '600', color: colors.text, margin: 0 }}>Alterar valor</p>
+                    <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                      Aumentar ou diminuir apenas neste mês
+                    </p>
+                  </div>
+                </button>
+
                 {/* Pagar com desconto */}
                 <button
                   onClick={() => setActionType('discount')}
@@ -2013,6 +2076,112 @@ Netflix - R$ 55,90"
                   >
                     {isProcessingAction ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <SkipForward size={16} />}
                     Pular Mês
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário de Alterar Valor */}
+            {actionType === 'change_value' && (
+              <div>
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: '#e0e7ff',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <Info size={20} color="#6366f1" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <p style={{ color: '#4338ca', fontSize: '14px', margin: 0 }}>
+                    Altere o valor apenas para <strong>{selectedMonth}/{selectedYear}</strong>.
+                    O valor original ({formatCurrency(selectedBill?.originalAmount || selectedBill?.amount)}) será mantido para os outros meses.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Novo valor (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    placeholder="0,00"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {customAmount && parseFloat(customAmount) !== (selectedBill?.originalAmount || selectedBill?.amount) && (
+                    <p style={{ fontSize: '13px', color: parseFloat(customAmount) > (selectedBill?.originalAmount || selectedBill?.amount) ? '#ef4444' : '#22c55e', marginTop: '8px' }}>
+                      {parseFloat(customAmount) > (selectedBill?.originalAmount || selectedBill?.amount) ? '↑' : '↓'} Diferença: {formatCurrency(Math.abs(parseFloat(customAmount) - (selectedBill?.originalAmount || selectedBill?.amount)))}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Motivo da alteração (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={actionNotes}
+                    onChange={(e) => setActionNotes(e.target.value)}
+                    placeholder="Ex: Reajuste, taxa extra, etc..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handleChangeValue}
+                    disabled={isProcessingAction || !customAmount}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: '#6366f1',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: isProcessingAction || !customAmount ? 'not-allowed' : 'pointer',
+                      opacity: isProcessingAction || !customAmount ? 0.5 : 1
+                    }}
+                  >
+                    {isProcessingAction ? 'Salvando...' : 'Salvar novo valor'}
                   </button>
                 </div>
               </div>

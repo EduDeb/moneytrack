@@ -1302,6 +1302,70 @@ router.delete('/:id/delete-payment', async (req, res) => {
   }
 })
 
+// @route   POST /api/bills/force-delete-payment
+// @desc    Forçar exclusão de pagamento por recurringId (para casos problemáticos)
+router.post('/force-delete-payment', async (req, res) => {
+  try {
+    const { recurringId, month, year } = req.body
+
+    if (!recurringId) {
+      return res.status(400).json({ message: 'recurringId é obrigatório' })
+    }
+
+    // Extrair ID real se for virtual
+    let realId = recurringId
+    if (recurringId.includes('_week')) {
+      realId = recurringId.split('_week')[0]
+    }
+
+    const targetMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const targetYear = year ? parseInt(year) : new Date().getFullYear()
+
+    // Buscar TODOS os pagamentos para este recurring neste mês
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      recurring: realId,
+      month: targetMonth,
+      year: targetYear
+    })
+
+    if (payments.length === 0) {
+      return res.json({
+        message: 'Nenhum pagamento encontrado para deletar',
+        recurringId: realId,
+        month: targetMonth,
+        year: targetYear
+      })
+    }
+
+    // Deletar todos os pagamentos encontrados
+    const deleted = []
+    for (const payment of payments) {
+      // Deletar transação associada
+      if (payment.transaction) {
+        await Transaction.findByIdAndDelete(payment.transaction)
+      }
+      await RecurringPayment.findByIdAndDelete(payment._id)
+      deleted.push({
+        paymentId: payment._id,
+        dueDay: payment.dueDay,
+        amountPaid: payment.amountPaid
+      })
+    }
+
+    res.json({
+      message: `${deleted.length} pagamento(s) deletado(s) com sucesso!`,
+      deleted,
+      recurringId: realId,
+      month: targetMonth,
+      year: targetYear
+    })
+  } catch (error) {
+    console.error('[FORCE DELETE ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // @route   POST /api/bills/fix-all-payments
 // @desc    Corrigir todos os pagamentos de recorrências semanais sem dueDay
 router.post('/fix-all-payments', async (req, res) => {

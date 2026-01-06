@@ -79,6 +79,7 @@ function Bills() {
   const [discountAmount, setDiscountAmount] = useState('')
   const [partialAmount, setPartialAmount] = useState('')
   const [customAmount, setCustomAmount] = useState('') // Novo valor personalizado
+  const [customDueDate, setCustomDueDate] = useState('') // Novo dia de vencimento
   const [actionNotes, setActionNotes] = useState('')
   const [isProcessingAction, setIsProcessingAction] = useState(false)
 
@@ -358,6 +359,36 @@ function Bills() {
     } catch (error) {
       console.error('Erro ao alterar valor:', error)
       toast.error(error.response?.data?.message || 'Erro ao alterar valor')
+    } finally {
+      setIsProcessingAction(false)
+    }
+  }
+
+  // Alterar data de vencimento (apenas para este mês)
+  const handleChangeDueDate = async () => {
+    if (!selectedBill || !customDueDate) return
+    const day = parseInt(customDueDate)
+    if (isNaN(day) || day < 1 || day > 31) {
+      toast.error('Dia inválido. Informe um dia entre 1 e 31.')
+      return
+    }
+    setIsProcessingAction(true)
+    try {
+      await api.put(`/bills/${selectedBill._id}/override`, {
+        month: selectedMonth,
+        year: selectedYear,
+        dueDateOverride: day,
+        notes: actionNotes || `Data alterada para dia ${day}`
+      })
+      setShowActionModal(false)
+      setCustomDueDate('')
+      setActionNotes('')
+      await fetchBills()
+      await fetchSummary()
+      toast.success('Data de vencimento alterada para este mês!')
+    } catch (error) {
+      console.error('Erro ao alterar data:', error)
+      toast.error(error.response?.data?.message || 'Erro ao alterar data')
     } finally {
       setIsProcessingAction(false)
     }
@@ -1929,6 +1960,43 @@ Netflix - R$ 55,90"
                   </div>
                 </button>
 
+                {/* Alterar data */}
+                <button
+                  onClick={() => {
+                    setCustomDueDate(selectedBill?.dueDay?.toString() || '')
+                    setActionType('change_date')
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.border}`,
+                    backgroundColor: colors.backgroundCard,
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: '#fef3c7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Calendar size={20} color="#f59e0b" />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '600', color: colors.text, margin: 0 }}>Alterar data</p>
+                    <p style={{ fontSize: '13px', color: colors.textSecondary, margin: 0 }}>
+                      Modificar vencimento apenas neste mês
+                    </p>
+                  </div>
+                </button>
+
                 {/* Pagar com desconto */}
                 <button
                   onClick={() => setActionType('discount')}
@@ -2182,6 +2250,113 @@ Netflix - R$ 55,90"
                     }}
                   >
                     {isProcessingAction ? 'Salvando...' : 'Salvar novo valor'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Formulário de Alterar Data */}
+            {actionType === 'change_date' && (
+              <div>
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: '#fef3c7',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <Info size={20} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <p style={{ color: '#92400e', fontSize: '14px', margin: 0 }}>
+                    Altere a data de vencimento apenas para <strong>{selectedMonth}/{selectedYear}</strong>.
+                    A data original (dia {selectedBill?.originalDueDay || selectedBill?.dueDay}) será mantida para os outros meses.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Novo dia de vencimento (1-31)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={customDueDate}
+                    onChange={(e) => setCustomDueDate(e.target.value)}
+                    placeholder="Ex: 15"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {customDueDate && parseInt(customDueDate) !== (selectedBill?.originalDueDay || selectedBill?.dueDay) && (
+                    <p style={{ fontSize: '13px', color: '#d97706', marginTop: '8px' }}>
+                      Vencimento será alterado do dia {selectedBill?.originalDueDay || selectedBill?.dueDay} para o dia {customDueDate}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.text, marginBottom: '6px' }}>
+                    Motivo da alteração (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={actionNotes}
+                    onChange={(e) => setActionNotes(e.target.value)}
+                    placeholder="Ex: Feriado, antecipação, etc..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setActionType(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.backgroundCard,
+                      color: colors.textSecondary,
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handleChangeDueDate}
+                    disabled={isProcessingAction || !customDueDate}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: '#d97706',
+                      color: 'white',
+                      fontWeight: '500',
+                      cursor: isProcessingAction || !customDueDate ? 'not-allowed' : 'pointer',
+                      opacity: isProcessingAction || !customDueDate ? 0.5 : 1
+                    }}
+                  >
+                    {isProcessingAction ? 'Salvando...' : 'Salvar nova data'}
                   </button>
                 </div>
               </div>

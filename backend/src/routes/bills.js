@@ -234,6 +234,19 @@ router.get('/', async (req, res) => {
         // Para recorrências mensais (código original)
         let dueDay = r.dayOfMonth || recurringStartDate.getUTCDate()
 
+        // Verificar se há sobrescrita para este mês (precisa verificar antes de calcular dueDate)
+        const override = overridesMap.get(r._id.toString())
+
+        // Se for do tipo 'skip', não mostrar esta conta neste mês
+        if (override?.type === 'skip') {
+          return
+        }
+
+        // Aplicar override de data se existir
+        if (override?.dueDateOverride) {
+          dueDay = override.dueDateOverride
+        }
+
         // Ajustar para o último dia do mês se necessário
         if (dueDay > lastDayOfMonth) {
           dueDay = lastDayOfMonth
@@ -256,14 +269,6 @@ router.get('/', async (req, res) => {
         // Verificar se foi pago usando a tabela RecurringPayment
         const isPaidThisMonth = paidRecurringMap.has(r._id.toString())
 
-        // Verificar se há sobrescrita para este mês
-        const override = overridesMap.get(r._id.toString())
-
-        // Se for do tipo 'skip', não mostrar esta conta neste mês
-        if (override?.type === 'skip') {
-          return
-        }
-
         const finalAmount = override?.amount ?? r.amount
         const finalName = override?.name ?? r.name
         const isPartialPayment = override?.type === 'partial_payment'
@@ -271,6 +276,9 @@ router.get('/', async (req, res) => {
 
         // Usar função de urgência baseada na semana calendário
         const urgency = calculateUrgency(dueDate, isPaidThisMonth)
+
+        // Calcular dia original para referência
+        const originalDueDay = override?.originalDueDay || (r.dayOfMonth || recurringStartDate.getUTCDate())
 
         recurringBills.push({
           _id: r._id,
@@ -281,6 +289,8 @@ router.get('/', async (req, res) => {
           hasOverride: !!override, // Indicar se tem sobrescrita
           overrideType: override?.type, // Tipo de override (custom_amount, partial_payment)
           overrideNotes: override?.notes, // Motivo do desconto/alteração
+          hasDueDateOverride: !!override?.dueDateOverride, // Indicar se tem override de data
+          originalDueDay: originalDueDay, // Dia original de vencimento
           isPartialPayment,
           paidAmount, // Quanto já foi pago (para pagamentos parciais)
           remainingAmount: isPartialPayment ? finalAmount : null, // Quanto falta pagar
@@ -641,7 +651,7 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 //          Isso permite alterar o valor de uma conta apenas para aquele mês, sem afetar outros meses
 router.put('/:id/override', async (req, res) => {
   try {
-    const { month, year, amount, name, notes, type } = req.body
+    const { month, year, amount, name, notes, type, dueDateOverride } = req.body
 
     // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
     let recurringId = req.params.id
@@ -660,6 +670,9 @@ router.put('/:id/override', async (req, res) => {
       return res.status(404).json({ message: 'Recorrência não encontrada' })
     }
 
+    // Calcular dia original de vencimento
+    const originalDueDay = recurring.dayOfMonth || new Date(recurring.startDate).getDate()
+
     // Criar ou atualizar a sobrescrita
     const override = await RecurringOverride.findOneAndUpdate(
       {
@@ -677,7 +690,11 @@ router.put('/:id/override', async (req, res) => {
         originalAmount: recurring.amount,
         ...(amount !== undefined && { amount: parseFloat(amount) }),
         ...(name !== undefined && { name }),
-        ...(notes !== undefined && { notes })
+        ...(notes !== undefined && { notes }),
+        ...(dueDateOverride !== undefined && {
+          dueDateOverride: parseInt(dueDateOverride),
+          originalDueDay: originalDueDay
+        })
       },
       { upsert: true, new: true }
     )

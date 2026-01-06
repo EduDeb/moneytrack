@@ -46,6 +46,14 @@ const recurringOverrideSchema = new mongoose.Schema({
   },
   notes: {
     type: String  // Motivo do desconto, pular, etc.
+  },
+  // Override de data de vencimento para este mês
+  dueDateOverride: {
+    type: Number,  // Dia do mês (1-31)
+    default: null
+  },
+  originalDueDay: {
+    type: Number  // Dia original de vencimento (para referência)
   }
 }, {
   timestamps: true

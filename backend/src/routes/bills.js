@@ -619,16 +619,22 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 // @route   PUT /api/bills/:id/override
 // @desc    Criar/atualizar sobrescrita de valor para um mês específico (apenas para recorrências)
 //          Isso permite alterar o valor de uma conta apenas para aquele mês, sem afetar outros meses
-router.put('/:id/override', validateObjectId(), async (req, res) => {
+router.put('/:id/override', async (req, res) => {
   try {
     const { month, year, amount, name, notes, type } = req.body
+
+    // Extrair ID real se for ID virtual de recorrência semanal (formato: xxx_week1)
+    let recurringId = req.params.id
+    if (req.params.id.includes('_week')) {
+      recurringId = req.params.id.split('_week')[0]
+    }
 
     if (!month || !year) {
       return res.status(400).json({ message: 'Mês e ano são obrigatórios' })
     }
 
     // Verificar se a recorrência existe
-    const recurring = await Recurring.findOne({ _id: req.params.id, user: req.user._id })
+    const recurring = await Recurring.findOne({ _id: recurringId, user: req.user._id })
 
     if (!recurring) {
       return res.status(404).json({ message: 'Recorrência não encontrada' })
@@ -638,13 +644,13 @@ router.put('/:id/override', validateObjectId(), async (req, res) => {
     const override = await RecurringOverride.findOneAndUpdate(
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year)
       },
       {
         user: req.user._id,
-        recurring: req.params.id,
+        recurring: recurringId,
         month: parseInt(month),
         year: parseInt(year),
         type: type || 'custom_amount',

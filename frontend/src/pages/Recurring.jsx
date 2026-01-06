@@ -183,7 +183,15 @@ export default function Recurring() {
       try {
         console.log('[DELETE INDIVIDUAL] Chamando API para excluir:', id)
         const response = await api.delete(`/recurring/${id}/permanent`)
-        console.log('[DELETE INDIVIDUAL] Resposta:', response.data)
+        console.log('[DELETE INDIVIDUAL] Resposta COMPLETA:', JSON.stringify(response.data))
+
+        // Verificar se realmente foi permanent delete
+        if (response.data._deleteType !== 'PERMANENT_V2') {
+          console.error('[DELETE INDIVIDUAL] ERRO: Backend não retornou PERMANENT_V2!', response.data)
+          toast.error('Erro: Exclusão permanente não executada. Verifique o deploy do backend.')
+          return
+        }
+
         toast.success(`Recorrência excluída! ${response.data.transactionsPreserved || 0} transação(ões) preservada(s).`)
         fetchData()
       } catch (error) {
@@ -309,7 +317,15 @@ export default function Recurring() {
       console.log('[DELETE] Tentando excluir:', id)
       try {
         const response = await api.delete(`/recurring/${id}/permanent`)
-        console.log('[DELETE] Sucesso:', response.data)
+        console.log('[DELETE] Resposta COMPLETA:', JSON.stringify(response.data))
+
+        // Verificar se realmente foi permanent delete
+        if (response.data._deleteType !== 'PERMANENT_V2') {
+          console.error('[DELETE] ERRO: Backend não retornou PERMANENT_V2 para ID:', id, response.data)
+          errorCount++
+          continue
+        }
+
         successCount++
       } catch (error) {
         console.error(`[DELETE] Erro ao excluir recorrência ${id}:`, error.response?.data || error.message)

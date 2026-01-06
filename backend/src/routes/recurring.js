@@ -391,14 +391,15 @@ router.delete('/:id/permanent', async (req, res) => {
     // 5. Deletar a recorrência permanentemente
     await Recurring.deleteOne({ _id: recurring._id })
 
-    console.log(`[RECURRING DELETE] Recorrência ${recurring.name} excluída permanentemente. ` +
-      `Transações preservadas: ${transactionsUpdated.modifiedCount}`)
+    console.log(`[PERMANENT DELETE V2] Recorrência "${recurring.name}" DELETADA PERMANENTEMENTE. ` +
+      `ID: ${req.params.id}, Transações preservadas: ${transactionsUpdated.modifiedCount}`)
 
     res.json({
       message: 'Recorrência excluída permanentemente',
       recurringName: recurring.name,
       transactionsPreserved: transactionsUpdated.modifiedCount,
-      paymentsRemoved: paymentsCount
+      paymentsRemoved: paymentsCount,
+      _deleteType: 'PERMANENT_V2'
     })
   } catch (error) {
     console.error('[RECURRING DELETE ERROR]', error)
@@ -422,7 +423,9 @@ router.delete('/:id', async (req, res) => {
     recurring.isActive = false
     await recurring.save()
 
-    res.json({ message: 'Recorrência desativada com sucesso' })
+    console.log(`[SOFT DELETE] Recorrência "${recurring.name}" PAUSADA (isActive=false). ID: ${req.params.id}`)
+
+    res.json({ message: 'Recorrência desativada com sucesso', _deleteType: 'SOFT_DELETE' })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao desativar recorrência', error: error.message })
   }

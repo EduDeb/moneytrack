@@ -358,30 +358,9 @@ router.put('/:id', async (req, res) => {
   }
 })
 
-// @route   DELETE /api/recurring/:id
-// @desc    Desativar recorrência
-router.delete('/:id', async (req, res) => {
-  try {
-    const recurring = await Recurring.findOne({
-      _id: req.params.id,
-      user: req.user._id
-    })
-
-    if (!recurring) {
-      return res.status(404).json({ message: 'Recorrência não encontrada' })
-    }
-
-    recurring.isActive = false
-    await recurring.save()
-
-    res.json({ message: 'Recorrência desativada com sucesso' })
-  } catch (error) {
-    res.status(500).json({ message: 'Erro ao desativar recorrência', error: error.message })
-  }
-})
-
 // @route   DELETE /api/recurring/:id/permanent
 // @desc    Excluir recorrência permanentemente (mantém transações já pagas)
+// IMPORTANTE: Esta rota deve vir ANTES de /:id para o Express fazer o match correto
 router.delete('/:id/permanent', async (req, res) => {
   try {
     const recurring = await Recurring.findOne({
@@ -424,6 +403,28 @@ router.delete('/:id/permanent', async (req, res) => {
   } catch (error) {
     console.error('[RECURRING DELETE ERROR]', error)
     res.status(500).json({ message: 'Erro ao excluir recorrência', error: error.message })
+  }
+})
+
+// @route   DELETE /api/recurring/:id
+// @desc    Desativar recorrência (soft delete)
+router.delete('/:id', async (req, res) => {
+  try {
+    const recurring = await Recurring.findOne({
+      _id: req.params.id,
+      user: req.user._id
+    })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    recurring.isActive = false
+    await recurring.save()
+
+    res.json({ message: 'Recorrência desativada com sucesso' })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao desativar recorrência', error: error.message })
   }
 })
 

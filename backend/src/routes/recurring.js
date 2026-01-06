@@ -2,6 +2,8 @@ const express = require('express')
 const router = express.Router()
 const Recurring = require('../models/Recurring')
 const Transaction = require('../models/Transaction')
+const RecurringPayment = require('../models/RecurringPayment')
+const RecurringOverride = require('../models/RecurringOverride')
 const { protect } = require('../middleware/auth')
 const { v4: uuidv4 } = require('uuid')
 
@@ -375,6 +377,53 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Recorrência desativada com sucesso' })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao desativar recorrência', error: error.message })
+  }
+})
+
+// @route   DELETE /api/recurring/:id/permanent
+// @desc    Excluir recorrência permanentemente (mantém transações já pagas)
+router.delete('/:id/permanent', async (req, res) => {
+  try {
+    const recurring = await Recurring.findOne({
+      _id: req.params.id,
+      user: req.user._id
+    })
+
+    if (!recurring) {
+      return res.status(404).json({ message: 'Recorrência não encontrada' })
+    }
+
+    // 1. Contar pagamentos existentes (para informar quantas transações foram preservadas)
+    const paymentsCount = await RecurringPayment.countDocuments({ recurring: recurring._id })
+
+    // 2. Remover referência recurringId das transações (para não ficarem órfãs)
+    //    As transações são MANTIDAS - elas são histórico financeiro válido
+    const transactionsUpdated = await Transaction.updateMany(
+      { recurringId: recurring._id },
+      { $unset: { recurringId: '' } }
+    )
+
+    // 3. Deletar os registros de pagamento (RecurringPayment)
+    await RecurringPayment.deleteMany({ recurring: recurring._id })
+
+    // 4. Deletar os overrides
+    await RecurringOverride.deleteMany({ recurring: recurring._id })
+
+    // 5. Deletar a recorrência permanentemente
+    await Recurring.deleteOne({ _id: recurring._id })
+
+    console.log(`[RECURRING DELETE] Recorrência ${recurring.name} excluída permanentemente. ` +
+      `Transações preservadas: ${transactionsUpdated.modifiedCount}`)
+
+    res.json({
+      message: 'Recorrência excluída permanentemente',
+      recurringName: recurring.name,
+      transactionsPreserved: transactionsUpdated.modifiedCount,
+      paymentsRemoved: paymentsCount
+    })
+  } catch (error) {
+    console.error('[RECURRING DELETE ERROR]', error)
+    res.status(500).json({ message: 'Erro ao excluir recorrência', error: error.message })
   }
 })
 

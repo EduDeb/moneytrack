@@ -122,6 +122,83 @@ router.get('/:id', validateObjectId(), async (req, res) => {
   }
 })
 
+// @route   GET /api/accounts/:id/diagnose
+// @desc    Diagnosticar composição do saldo (debug)
+router.get('/:id/diagnose', validateObjectId(), async (req, res) => {
+  try {
+    const account = await Account.findOne({
+      _id: req.params.id,
+      user: req.user._id
+    })
+
+    if (!account) {
+      return res.status(404).json({ message: 'Conta não encontrada' })
+    }
+
+    // Buscar todas as transações que afetam esta conta
+    const transactions = await Transaction.find({
+      user: req.user._id,
+      $or: [
+        { account: account._id },
+        { toAccount: account._id }
+      ],
+      status: 'confirmed'
+    }).sort({ date: 1 })
+
+    // Calcular contribuição de cada transação
+    let runningBalance = account.initialBalance
+    const breakdown = [{
+      type: 'initialBalance',
+      description: 'Saldo inicial da conta',
+      amount: account.initialBalance,
+      change: account.initialBalance,
+      balance: runningBalance,
+      date: account.createdAt
+    }]
+
+    transactions.forEach(t => {
+      let change = 0
+      if (t.type === 'income' && t.account.equals(account._id)) {
+        change = t.amount
+      } else if (t.type === 'expense' && t.account.equals(account._id)) {
+        change = -t.amount
+      } else if (t.type === 'transfer') {
+        if (t.account.equals(account._id)) change = -t.amount
+        if (t.toAccount && t.toAccount.equals(account._id)) change = t.amount
+      }
+
+      if (change !== 0) {
+        runningBalance += change
+        breakdown.push({
+          id: t._id,
+          date: t.date,
+          type: t.type,
+          category: t.category,
+          description: t.description,
+          amount: t.amount,
+          change: change,
+          balance: Math.round(runningBalance * 100) / 100
+        })
+      }
+    })
+
+    res.json({
+      account: {
+        id: account._id,
+        name: account.name,
+        type: account.type,
+        initialBalance: account.initialBalance
+      },
+      currentBalance: Math.round(runningBalance * 100) / 100,
+      transactionCount: transactions.length,
+      breakdown
+    })
+  } catch (error) {
+    console.error('[DIAGNOSE ERROR]', error)
+    res.status(500).json({ message: 'Erro ao diagnosticar conta', error: error.message })
+  }
+})
+
 // @route   POST /api/accounts
 // @desc    Criar nova conta
 router.post('/', async (req, res) => {

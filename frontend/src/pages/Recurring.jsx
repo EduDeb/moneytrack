@@ -156,12 +156,35 @@ export default function Recurring() {
   }
 
   const handleDelete = async (id) => {
-    if (window.confirm('Tem certeza que deseja desativar esta recorrência?')) {
+    if (window.confirm('Tem certeza que deseja PAUSAR esta recorrência? Ela ficará inativa mas poderá ser reativada depois.')) {
       try {
         await api.delete(`/recurring/${id}`)
+        toast.success('Recorrência pausada com sucesso')
         fetchData()
       } catch (error) {
-        console.error('Erro ao excluir:', error)
+        console.error('Erro ao pausar:', error)
+        toast.error('Erro ao pausar recorrência')
+      }
+    }
+  }
+
+  const handlePermanentDelete = async (id, name) => {
+    const confirmed = window.confirm(
+      `⚠️ ATENÇÃO: Você está prestes a EXCLUIR PERMANENTEMENTE a recorrência "${name}".\n\n` +
+      `• Esta ação é IRREVERSÍVEL\n` +
+      `• As transações já pagas serão MANTIDAS no histórico\n` +
+      `• A recorrência será removida completamente\n\n` +
+      `Deseja continuar?`
+    )
+
+    if (confirmed) {
+      try {
+        const response = await api.delete(`/recurring/${id}/permanent`)
+        toast.success(`Recorrência excluída! ${response.data.transactionsPreserved || 0} transação(ões) preservada(s).`)
+        fetchData()
+      } catch (error) {
+        console.error('Erro ao excluir permanentemente:', error)
+        toast.error(error.response?.data?.message || 'Erro ao excluir recorrência')
       }
     }
   }
@@ -859,6 +882,19 @@ export default function Recurring() {
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(item._id) }}
+                        title="Pausar recorrência"
+                        style={{
+                          padding: '0.5rem',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Pause size={16} style={{ color: '#f59e0b' }} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePermanentDelete(item._id, item.name) }}
+                        title="Excluir permanentemente"
                         style={{
                           padding: '0.5rem',
                           border: 'none',

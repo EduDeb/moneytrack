@@ -278,11 +278,19 @@ export default function Recurring() {
     }
   }
 
-  // Excluir todas selecionadas
+  // Excluir todas selecionadas (permanentemente)
   const handleDeleteSelected = async () => {
     if (selectedItems.length === 0) return
 
-    if (!confirm(`Tem certeza que deseja excluir ${selectedItems.length} recorrência(s)?`)) return
+    const confirmed = window.confirm(
+      `⚠️ ATENÇÃO: Você está prestes a EXCLUIR PERMANENTEMENTE ${selectedItems.length} recorrência(s).\n\n` +
+      `• Esta ação é IRREVERSÍVEL\n` +
+      `• As transações já pagas serão MANTIDAS no histórico\n` +
+      `• As recorrências serão removidas completamente\n\n` +
+      `Deseja continuar?`
+    )
+
+    if (!confirmed) return
 
     setIsProcessingBatch(true)
     let successCount = 0
@@ -290,7 +298,7 @@ export default function Recurring() {
 
     for (const id of selectedItems) {
       try {
-        await api.delete(`/recurring/${id}`)
+        await api.delete(`/recurring/${id}/permanent`)
         successCount++
       } catch (error) {
         console.error(`Erro ao excluir recorrência:`, error)
@@ -306,7 +314,7 @@ export default function Recurring() {
     if (errorCount > 0) {
       toast.error(`${successCount} excluída(s), ${errorCount} erro(s)`)
     } else if (successCount > 0) {
-      toast.success(`${successCount} recorrência(s) excluída(s)!`)
+      toast.success(`${successCount} recorrência(s) excluída(s) permanentemente!`)
     }
   }
 

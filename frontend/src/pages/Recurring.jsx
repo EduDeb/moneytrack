@@ -169,6 +169,7 @@ export default function Recurring() {
   }
 
   const handlePermanentDelete = async (id, name) => {
+    console.log('[DELETE INDIVIDUAL] handlePermanentDelete chamado, id:', id, 'name:', name)
     const confirmed = window.confirm(
       `⚠️ ATENÇÃO: Você está prestes a EXCLUIR PERMANENTEMENTE a recorrência "${name}".\n\n` +
       `• Esta ação é IRREVERSÍVEL\n` +
@@ -177,13 +178,16 @@ export default function Recurring() {
       `Deseja continuar?`
     )
 
+    console.log('[DELETE INDIVIDUAL] Usuário confirmou:', confirmed)
     if (confirmed) {
       try {
+        console.log('[DELETE INDIVIDUAL] Chamando API para excluir:', id)
         const response = await api.delete(`/recurring/${id}/permanent`)
+        console.log('[DELETE INDIVIDUAL] Resposta:', response.data)
         toast.success(`Recorrência excluída! ${response.data.transactionsPreserved || 0} transação(ões) preservada(s).`)
         fetchData()
       } catch (error) {
-        console.error('Erro ao excluir permanentemente:', error)
+        console.error('[DELETE INDIVIDUAL] Erro:', error.response?.data || error.message)
         toast.error(error.response?.data?.message || 'Erro ao excluir recorrência')
       }
     }
@@ -280,7 +284,11 @@ export default function Recurring() {
 
   // Excluir todas selecionadas (permanentemente)
   const handleDeleteSelected = async () => {
-    if (selectedItems.length === 0) return
+    console.log('[DELETE] handleDeleteSelected chamado, selectedItems:', selectedItems)
+    if (selectedItems.length === 0) {
+      console.log('[DELETE] Nenhum item selecionado')
+      return
+    }
 
     const confirmed = window.confirm(
       `⚠️ ATENÇÃO: Você está prestes a EXCLUIR PERMANENTEMENTE ${selectedItems.length} recorrência(s).\n\n` +
@@ -290,6 +298,7 @@ export default function Recurring() {
       `Deseja continuar?`
     )
 
+    console.log('[DELETE] Usuário confirmou:', confirmed)
     if (!confirmed) return
 
     setIsProcessingBatch(true)
@@ -297,11 +306,13 @@ export default function Recurring() {
     let errorCount = 0
 
     for (const id of selectedItems) {
+      console.log('[DELETE] Tentando excluir:', id)
       try {
-        await api.delete(`/recurring/${id}/permanent`)
+        const response = await api.delete(`/recurring/${id}/permanent`)
+        console.log('[DELETE] Sucesso:', response.data)
         successCount++
       } catch (error) {
-        console.error(`Erro ao excluir recorrência:`, error)
+        console.error(`[DELETE] Erro ao excluir recorrência ${id}:`, error.response?.data || error.message)
         errorCount++
       }
     }

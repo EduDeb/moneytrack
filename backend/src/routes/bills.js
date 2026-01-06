@@ -1302,6 +1302,61 @@ router.delete('/:id/delete-payment', async (req, res) => {
   }
 })
 
+// @route   POST /api/bills/fix-all-payments
+// @desc    Corrigir todos os pagamentos de recorrências semanais sem dueDay
+router.post('/fix-all-payments', async (req, res) => {
+  try {
+    const { month, year } = req.body
+    const targetMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const targetYear = year ? parseInt(year) : new Date().getFullYear()
+
+    // Buscar todos os pagamentos do mês sem dueDay
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      month: targetMonth,
+      year: targetYear,
+      $or: [{ dueDay: null }, { dueDay: { $exists: false } }]
+    }).populate('recurring', 'name frequency startDate dayOfWeek')
+
+    const fixed = []
+    const errors = []
+
+    for (const payment of payments) {
+      try {
+        // Só corrigir se for recorrência semanal
+        if (payment.recurring?.frequency === 'weekly') {
+          // Usar a data do pagamento para determinar o dueDay
+          const paidAt = new Date(payment.paidAt || payment.createdAt)
+          const dueDay = paidAt.getUTCDate()
+
+          payment.dueDay = dueDay
+          await payment.save()
+
+          fixed.push({
+            name: payment.recurring.name,
+            dueDay: dueDay,
+            paidAt: payment.paidAt
+          })
+        }
+      } catch (err) {
+        errors.push({
+          paymentId: payment._id,
+          error: err.message
+        })
+      }
+    }
+
+    res.json({
+      message: `${fixed.length} pagamento(s) corrigido(s)`,
+      fixed,
+      errors: errors.length > 0 ? errors : undefined
+    })
+  } catch (error) {
+    console.error('[FIX ALL PAYMENTS ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // @route   GET /api/bills/debug-payments
 // @desc    Debug: Ver pagamentos do mês atual
 router.get('/debug-payments', async (req, res) => {

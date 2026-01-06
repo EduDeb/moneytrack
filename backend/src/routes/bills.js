@@ -690,25 +690,44 @@ router.put('/:id/override', async (req, res) => {
       year: parseInt(year)
     })
 
+    console.log(`[OVERRIDE] Encontrados ${existingPayments.length} pagamentos para atualizar`)
+
     let transactionsUpdated = 0
     for (const payment of existingPayments) {
-      if (payment.transaction) {
-        const updateData = {}
-        if (amount !== undefined) {
-          updateData.amount = parseFloat(amount)
-        }
-        if (name !== undefined) {
-          // Manter o sufixo (Sem X) se existir
-          const existingTx = await Transaction.findById(payment.transaction)
-          if (existingTx) {
-            const weekMatch = existingTx.description.match(/\(Sem \d+\)$/)
-            updateData.description = weekMatch ? `${name} ${weekMatch[0]}` : name
-          }
-        }
+      console.log(`[OVERRIDE] Processando pagamento: ${payment._id}, transaction: ${payment.transaction}`)
 
-        if (Object.keys(updateData).length > 0) {
-          await Transaction.findByIdAndUpdate(payment.transaction, updateData)
-          transactionsUpdated++
+      if (payment.transaction) {
+        try {
+          // Atualizar valor se fornecido
+          if (amount !== undefined) {
+            const updatedTx = await Transaction.findByIdAndUpdate(
+              payment.transaction,
+              { $set: { amount: parseFloat(amount) } },
+              { new: true }
+            )
+
+            if (updatedTx) {
+              console.log(`[OVERRIDE] Transação ${payment.transaction} atualizada: amount=${updatedTx.amount}`)
+              transactionsUpdated++
+            } else {
+              console.log(`[OVERRIDE] ERRO: Transação ${payment.transaction} não encontrada`)
+            }
+          }
+
+          // Atualizar nome/descrição se fornecido
+          if (name !== undefined) {
+            const existingTx = await Transaction.findById(payment.transaction)
+            if (existingTx) {
+              const weekMatch = existingTx.description.match(/\(Sem \d+\)$/)
+              const newDescription = weekMatch ? `${name} ${weekMatch[0]}` : name
+              await Transaction.findByIdAndUpdate(
+                payment.transaction,
+                { $set: { description: newDescription } }
+              )
+            }
+          }
+        } catch (error) {
+          console.error(`[OVERRIDE] ERRO ao atualizar transação ${payment.transaction}:`, error)
         }
       }
 
@@ -716,6 +735,7 @@ router.put('/:id/override', async (req, res) => {
       if (amount !== undefined) {
         payment.amountPaid = parseFloat(amount)
         await payment.save()
+        console.log(`[OVERRIDE] Payment ${payment._id} amountPaid atualizado para ${amount}`)
       }
     }
 

@@ -1056,6 +1056,20 @@ router.post('/:id/pay', async (req, res) => {
         return res.status(400).json({ message: 'Esta conta já foi paga' })
       }
 
+      // Verificar se há override de valor para este mês
+      const override = await RecurringOverride.findOne({
+        user: req.user._id,
+        recurring: recurring._id,
+        month: paymentMonth,
+        year: paymentYear
+      })
+
+      // Usar valor do override se existir, senão usar valor original
+      const finalAmount = override?.amount ?? recurring.amount
+      const finalName = override?.name ?? recurring.name
+
+      console.log(`[DEBUG PAY] Override encontrado: ${!!override}, valor final: ${finalAmount}`)
+
       // Data da transação = HOJE (quando o pagamento foi feito)
       const transactionDate = new Date()
 
@@ -1063,16 +1077,16 @@ router.post('/:id/pay', async (req, res) => {
 
       // Descrição inclui número da semana se for semanal
       const description = weekNumber
-        ? `${recurring.name} (Sem ${weekNumber})`
-        : recurring.name
+        ? `${finalName} (Sem ${weekNumber})`
+        : finalName
 
-      // Criar transação
+      // Criar transação com o valor final (considerando override)
       const transaction = await Transaction.create({
         user: req.user._id,
         type: recurring.type,
         category: recurring.category,
         description: description,
-        amount: recurring.amount,
+        amount: finalAmount,
         account: recurring.account,
         date: transactionDate,
         recurringId: recurring._id
@@ -1085,7 +1099,7 @@ router.post('/:id/pay', async (req, res) => {
         month: paymentMonth,
         year: paymentYear,
         transaction: transaction._id,
-        amountPaid: recurring.amount,
+        amountPaid: finalAmount,
         paidAt: transactionDate
       }
 

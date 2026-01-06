@@ -1302,6 +1302,148 @@ router.delete('/:id/delete-payment', async (req, res) => {
   }
 })
 
+// @route   POST /api/bills/diagnose
+// @desc    Diagnosticar problema com uma conta específica
+router.post('/diagnose', async (req, res) => {
+  try {
+    const { recurringId } = req.body
+
+    let realId = recurringId
+    if (recurringId && recurringId.includes('_week')) {
+      realId = recurringId.split('_week')[0]
+    }
+
+    // Buscar a recorrência
+    const recurring = await Recurring.findOne({
+      _id: realId,
+      user: req.user._id
+    })
+
+    // Buscar TODOS os pagamentos desta recorrência
+    const allPayments = await RecurringPayment.find({
+      user: req.user._id,
+      recurring: realId
+    })
+
+    // Buscar overrides
+    const overrides = await RecurringOverride.find({
+      user: req.user._id,
+      recurring: realId
+    })
+
+    // Buscar transações relacionadas
+    const transactions = await Transaction.find({
+      user: req.user._id,
+      recurringId: realId
+    }).sort({ date: -1 }).limit(10)
+
+    res.json({
+      recurring: recurring ? {
+        _id: recurring._id,
+        name: recurring.name,
+        frequency: recurring.frequency,
+        amount: recurring.amount,
+        isActive: recurring.isActive,
+        startDate: recurring.startDate,
+        dayOfWeek: recurring.dayOfWeek
+      } : null,
+      payments: allPayments.map(p => ({
+        _id: p._id,
+        month: p.month,
+        year: p.year,
+        dueDay: p.dueDay,
+        amountPaid: p.amountPaid,
+        paidAt: p.paidAt
+      })),
+      overrides: overrides.map(o => ({
+        _id: o._id,
+        month: o.month,
+        year: o.year,
+        type: o.type,
+        amount: o.amount
+      })),
+      recentTransactions: transactions.map(t => ({
+        _id: t._id,
+        description: t.description,
+        amount: t.amount,
+        date: t.date
+      }))
+    })
+  } catch (error) {
+    console.error('[DIAGNOSE ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// @route   POST /api/bills/nuke-recurring
+// @desc    Deletar TUDO relacionado a uma recorrência em um mês específico
+router.post('/nuke-recurring', async (req, res) => {
+  try {
+    const { recurringId, month, year } = req.body
+
+    let realId = recurringId
+    if (recurringId && recurringId.includes('_week')) {
+      realId = recurringId.split('_week')[0]
+    }
+
+    const targetMonth = month ? parseInt(month) : new Date().getMonth() + 1
+    const targetYear = year ? parseInt(year) : new Date().getFullYear()
+
+    const results = {
+      paymentsDeleted: 0,
+      overridesDeleted: 0,
+      transactionsDeleted: 0
+    }
+
+    // Deletar pagamentos
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      recurring: realId,
+      month: targetMonth,
+      year: targetYear
+    })
+
+    for (const p of payments) {
+      if (p.transaction) {
+        await Transaction.findByIdAndDelete(p.transaction)
+        results.transactionsDeleted++
+      }
+      await RecurringPayment.findByIdAndDelete(p._id)
+      results.paymentsDeleted++
+    }
+
+    // Deletar overrides
+    const deleteOverrides = await RecurringOverride.deleteMany({
+      user: req.user._id,
+      recurring: realId,
+      month: targetMonth,
+      year: targetYear
+    })
+    results.overridesDeleted = deleteOverrides.deletedCount
+
+    // Criar override de skip para esconder este mês
+    await RecurringOverride.create({
+      user: req.user._id,
+      recurring: realId,
+      month: targetMonth,
+      year: targetYear,
+      type: 'skip',
+      originalAmount: 0,
+      amount: 0,
+      notes: 'Removido via nuke'
+    })
+
+    res.json({
+      message: 'Recorrência removida de ' + targetMonth + '/' + targetYear,
+      results,
+      skipped: true
+    })
+  } catch (error) {
+    console.error('[NUKE ERROR]', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // @route   POST /api/bills/force-delete-payment
 // @desc    Forçar exclusão de pagamento por recurringId (para casos problemáticos)
 router.post('/force-delete-payment', async (req, res) => {

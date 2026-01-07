@@ -582,6 +582,89 @@ router.get('/summary', async (req, res) => {
   }
 })
 
+// @route   GET /api/bills/overdue-debug
+// @desc    Debug - ver quais contas estão sendo contadas como atrasadas
+router.get('/overdue-debug', async (req, res) => {
+  try {
+    const { month, year } = req.query
+    const currentMonth = parseInt(month) || (new Date().getMonth() + 1)
+    const currentYear = parseInt(year) || new Date().getFullYear()
+
+    // Bills diretas
+    const bills = await Bill.find({
+      user: req.user._id,
+      currentMonth,
+      currentYear
+    })
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const overdueBills = bills.filter(b => {
+      if (b.isPaid) return false
+      const dueDate = new Date(currentYear, currentMonth - 1, Math.min(b.dueDay, new Date(currentYear, currentMonth, 0).getDate()))
+      dueDate.setHours(0, 0, 0, 0)
+      return dueDate < today
+    }).map(b => ({
+      _id: b._id,
+      name: b.name,
+      dueDay: b.dueDay,
+      isPaid: b.isPaid,
+      amount: b.amount,
+      type: 'bill'
+    }))
+
+    // Recorrências
+    const Recurring = require('../models/Recurring')
+    const RecurringPayment = require('../models/RecurringPayment')
+
+    const recurrings = await Recurring.find({
+      user: req.user._id,
+      isActive: true,
+      type: 'expense'
+    })
+
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    })
+    const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
+
+    const overdueRecurrings = recurrings.filter(r => {
+      const isPaid = paidRecurringIds.has(r._id.toString())
+      if (isPaid) return false
+
+      let dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
+      const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate()
+      if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
+
+      const dueDate = new Date(currentYear, currentMonth - 1, dueDay)
+      dueDate.setHours(0, 0, 0, 0)
+      return dueDate < today
+    }).map(r => ({
+      _id: r._id,
+      name: r.name,
+      dayOfMonth: r.dayOfMonth,
+      isPaid: paidRecurringIds.has(r._id.toString()),
+      amount: r.amount,
+      type: 'recurring'
+    }))
+
+    res.json({
+      month: currentMonth,
+      year: currentYear,
+      today: today.toISOString(),
+      overdueBills,
+      overdueRecurrings,
+      totalOverdue: overdueBills.length + overdueRecurrings.length
+    })
+  } catch (error) {
+    console.error('[BILLS ERROR] Overdue debug:', error.message)
+    res.status(500).json({ message: 'Erro ao debugar atrasadas', error: error.message })
+  }
+})
+
 // @route   POST /api/bills
 // @desc    Criar nova conta
 router.post('/', async (req, res) => {

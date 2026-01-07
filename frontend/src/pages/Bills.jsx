@@ -1,22 +1,17 @@
 import { useState, useEffect, useContext, useRef, useMemo } from 'react'
 import api from '../services/api'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, Edit2, X, Check, Home, Zap, Droplets, Wifi, Phone, Tv, Shield, CreditCard, Banknote, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2 } from 'lucide-react'
+import * as LucideIcons from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Check, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2 } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
+import { useCategories } from '../contexts/CategoriesContext'
 import MonthSelector from '../components/MonthSelector'
 import SortToggle from '../components/SortToggle'
 
-const categoryConfig = {
-  moradia: { label: 'Moradia', icon: Home, color: '#8b5cf6' },
-  energia: { label: 'Energia', icon: Zap, color: '#f59e0b' },
-  agua: { label: 'Água', icon: Droplets, color: '#3b82f6' },
-  internet: { label: 'Internet', icon: Wifi, color: '#06b6d4' },
-  telefone: { label: 'Telefone', icon: Phone, color: '#10b981' },
-  streaming: { label: 'Streaming', icon: Tv, color: '#ec4899' },
-  seguro: { label: 'Seguro', icon: Shield, color: '#6366f1' },
-  cartao: { label: 'Cartão', icon: CreditCard, color: '#ef4444' },
-  emprestimo: { label: 'Empréstimo', icon: Banknote, color: '#f97316' },
-  outros: { label: 'Outros', icon: MoreHorizontal, color: '#6b7280' }
+// Helper para obter componente de ícone a partir do nome (string)
+const getIconComponent = (iconName) => {
+  if (!iconName) return LucideIcons.MoreHorizontal
+  return LucideIcons[iconName] || LucideIcons.MoreHorizontal
 }
 
 const urgencyColors = {
@@ -36,6 +31,7 @@ const MONTH_NAMES = [
 
 function Bills() {
   const { colors, isDark } = useContext(ThemeContext)
+  const { expenseCategories, getCategoryByValue } = useCategories()
   const now = new Date()
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
@@ -959,9 +955,9 @@ function Bills() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {getFilteredBills().map((bill) => {
-            const cat = categoryConfig[bill.category] || categoryConfig.outros
+            const cat = getCategoryByValue(bill.category) || { label: 'Outros', icon: 'MoreHorizontal', color: '#6b7280' }
             const urgency = getUrgencyColors(bill.urgency)
-            const Icon = cat.icon
+            const Icon = getIconComponent(cat.icon)
             const isSelected = selectedItems.includes(bill._id)
 
             return (
@@ -1198,28 +1194,28 @@ function Bills() {
                   Categoria
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
-                  {Object.entries(categoryConfig).map(([key, config]) => {
-                    const Icon = config.icon
-                    const isSelected = form.category === key
+                  {expenseCategories.map((cat) => {
+                    const Icon = getIconComponent(cat.icon)
+                    const isSelected = form.category === cat.value
                     return (
                       <button
-                        key={key}
+                        key={cat.value}
                         type="button"
-                        onClick={() => setForm({ ...form, category: key })}
+                        onClick={() => setForm({ ...form, category: cat.value })}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
                           padding: '8px 4px',
                           borderRadius: '8px',
-                          border: isSelected ? `2px solid ${config.color}` : `2px solid ${colors.border}`,
-                          backgroundColor: isSelected ? `${config.color}15` : colors.backgroundCard,
+                          border: isSelected ? `2px solid ${cat.color}` : `2px solid ${colors.border}`,
+                          backgroundColor: isSelected ? `${cat.color}15` : colors.backgroundCard,
                           cursor: 'pointer'
                         }}
                       >
-                        <Icon size={18} color={isSelected ? config.color : colors.textSecondary} />
-                        <span style={{ fontSize: '9px', marginTop: '2px', color: isSelected ? config.color : colors.textSecondary }}>
-                          {config.label}
+                        <Icon size={18} color={isSelected ? cat.color : colors.textSecondary} />
+                        <span style={{ fontSize: '9px', marginTop: '2px', color: isSelected ? cat.color : colors.textSecondary }}>
+                          {cat.label}
                         </span>
                       </button>
                     )
@@ -1543,8 +1539,8 @@ Netflix - R$ 55,90"
                 <div style={{ maxHeight: '400px', overflow: 'auto', marginBottom: '16px' }}>
                   {importedBills.map((bill, index) => {
                     const isSelected = selectedBills.includes(index)
-                    const cat = categoryConfig[bill.category] || categoryConfig.outros
-                    const CatIcon = cat.icon
+                    const cat = getCategoryByValue(bill.category) || { label: 'Outros', icon: 'MoreHorizontal', color: '#6b7280' }
+                    const CatIcon = getIconComponent(cat.icon)
 
                     return (
                       <div
@@ -1604,8 +1600,8 @@ Netflix - R$ 55,90"
                                 fontSize: '12px'
                               }}
                             >
-                              {Object.entries(categoryConfig).map(([key, config]) => (
-                                <option key={key} value={key}>{config.label}</option>
+                              {expenseCategories.map((cat) => (
+                                <option key={cat.value} value={cat.value}>{cat.label}</option>
                               ))}
                             </select>
 

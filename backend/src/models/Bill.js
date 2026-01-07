@@ -12,7 +12,6 @@ const billSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['moradia', 'energia', 'agua', 'internet', 'telefone', 'streaming', 'seguro', 'cartao', 'emprestimo', 'outros'],
     default: 'outros'
   },
   amount: {

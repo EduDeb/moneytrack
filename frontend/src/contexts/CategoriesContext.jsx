@@ -82,10 +82,35 @@ export function CategoriesProvider({ children }) {
     return fetchCategories()
   }, [fetchCategories])
 
-  // Buscar categoria por value
+  // Buscar categoria por value (busca robusta)
   const getCategoryByValue = useCallback((value) => {
+    if (!value) return null
     const allCats = [...categories.income, ...categories.expense]
-    return allCats.find(c => c.value === value || c.name.toLowerCase() === value?.toLowerCase())
+
+    // 1. Busca exata por value
+    let found = allCats.find(c => c.value === value)
+    if (found) return found
+
+    // 2. Busca por nome (case insensitive)
+    const valueLower = value.toLowerCase()
+    found = allCats.find(c => c.name.toLowerCase() === valueLower)
+    if (found) return found
+
+    // 3. Busca normalizada (remove acentos e compara)
+    const valueNormalized = value.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '_')
+
+    found = allCats.find(c => {
+      const nameNormalized = c.name.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '_')
+      return c.value === valueNormalized || nameNormalized === valueNormalized
+    })
+
+    return found || null
   }, [categories])
 
   // Buscar cor de categoria

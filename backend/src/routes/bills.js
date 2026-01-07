@@ -558,13 +558,13 @@ router.get('/summary', async (req, res) => {
     const paidCount = bills.filter(b => b.isPaid).length + processedRecurrings.filter(r => r.isPaidThisMonth).length
     const pendingCount = bills.filter(b => !b.isPaid).length + processedRecurrings.filter(r => !r.isPaidThisMonth).length
     // Calcular overdue dinamicamente para bills (igual ao debug)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const todayForOverdue = new Date()
+    todayForOverdue.setHours(0, 0, 0, 0)
     const billsOverdueCount = bills.filter(b => {
       if (b.isPaid) return false
       const dueDate = new Date(currentYear, currentMonth - 1, Math.min(b.dueDay, new Date(currentYear, currentMonth, 0).getDate()))
       dueDate.setHours(0, 0, 0, 0)
-      return dueDate < today
+      return dueDate < todayForOverdue
     }).length
     const overdueCount = billsOverdueCount + recurringOverdue
 

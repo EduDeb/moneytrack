@@ -524,13 +524,16 @@ router.get('/summary', async (req, res) => {
         }
       }
 
-      // Calcular dia de vencimento para este mês
-      let dueDay = r.dayOfMonth || new Date(r.startDate).getUTCDate()
-      const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
+      // Calcular dia de vencimento para este mês (usando horário local, igual ao debug)
+      let dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
+      const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate()
       if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
 
-      const dueDate = new Date(Date.UTC(currentYear, currentMonth - 1, dueDay, 12, 0, 0))
-      const isOverdue = !isPaidThisMonth && dueDate < today
+      const dueDate = new Date(currentYear, currentMonth - 1, dueDay)
+      dueDate.setHours(0, 0, 0, 0)
+      const todayLocal = new Date()
+      todayLocal.setHours(0, 0, 0, 0)
+      const isOverdue = !isPaidThisMonth && dueDate < todayLocal
 
       return {
         ...r.toObject(),

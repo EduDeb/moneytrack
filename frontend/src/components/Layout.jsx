@@ -243,7 +243,7 @@ function Layout() {
                 color: colors.textSecondary,
                 margin: 0
               }}>
-                Suas finanças em dia
+                Suas finanças em dia · v1.0.2
               </p>
             </div>
           </div>

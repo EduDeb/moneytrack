@@ -443,6 +443,18 @@ router.post('/', [
       transactionData.date = normalizeToUTC(req.body.date);
     }
 
+    // Se não informar conta, usar "Banco Principal" como padrão
+    if (!transactionData.account) {
+      const Account = require('../models/Account');
+      const mainAccount = await Account.findOne({
+        user: req.user._id,
+        name: 'Banco Principal'
+      });
+      if (mainAccount) {
+        transactionData.account = mainAccount._id;
+      }
+    }
+
     const transaction = await Transaction.create(transactionData);
 
     res.status(201).json(transaction);

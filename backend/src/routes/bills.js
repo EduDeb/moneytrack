@@ -557,7 +557,16 @@ router.get('/summary', async (req, res) => {
     const pending = subtractMoney(total, paid)
     const paidCount = bills.filter(b => b.isPaid).length + processedRecurrings.filter(r => r.isPaidThisMonth).length
     const pendingCount = bills.filter(b => !b.isPaid).length + processedRecurrings.filter(r => !r.isPaidThisMonth).length
-    const overdueCount = bills.filter(b => !b.isPaid && b.daysUntilDue < 0).length + recurringOverdue
+    // Calcular overdue dinamicamente para bills (igual ao debug)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const billsOverdueCount = bills.filter(b => {
+      if (b.isPaid) return false
+      const dueDate = new Date(currentYear, currentMonth - 1, Math.min(b.dueDay, new Date(currentYear, currentMonth, 0).getDate()))
+      dueDate.setHours(0, 0, 0, 0)
+      return dueDate < today
+    }).length
+    const overdueCount = billsOverdueCount + recurringOverdue
 
     // Calcular descontos aplicados (para transparência) - usando função monetária
     const discountsApplied = roundMoney(

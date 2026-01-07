@@ -4,8 +4,9 @@ import { ThemeContext } from '../contexts/ThemeContext'
 import {
   Wallet, CreditCard, PiggyBank, Banknote, TrendingUp, Building2,
   Plus, Edit2, Trash2, ArrowRightLeft, Eye, EyeOff, MoreVertical,
-  ChevronDown, RefreshCw
+  ChevronDown, RefreshCw, Wrench
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 const accountIcons = {
   Wallet: Wallet,
@@ -57,10 +58,27 @@ export default function Accounts() {
     amount: 0,
     description: ''
   })
+  const [fixingTransactions, setFixingTransactions] = useState(false)
 
   useEffect(() => {
     fetchAccounts()
   }, [includeInactive])
+
+  const handleFixTransactions = async () => {
+    if (!confirm('Isso vai vincular TODAS as suas transações ao "Banco Principal". Deseja continuar?')) return
+
+    setFixingTransactions(true)
+    try {
+      const { data } = await api.post('/transactions/fix-account-refs')
+      toast.success(`Corrigido! ${data.linkedNoAccount + data.linkedWrongAccount} transações vinculadas ao Banco Principal`)
+      fetchAccounts() // Recarregar saldos
+    } catch (error) {
+      console.error('Erro ao corrigir transações:', error)
+      toast.error(error.response?.data?.message || 'Erro ao corrigir transações')
+    } finally {
+      setFixingTransactions(false)
+    }
+  }
 
   const fetchAccounts = async () => {
     try {
@@ -201,6 +219,26 @@ export default function Accounts() {
           >
             {showBalances ? <EyeOff size={18} /> : <Eye size={18} />}
             {showBalances ? 'Ocultar' : 'Mostrar'}
+          </button>
+          <button
+            onClick={handleFixTransactions}
+            disabled={fixingTransactions}
+            title="Vincular todas transações ao Banco Principal"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem 1rem',
+              border: `1px solid ${colors.border}`,
+              borderRadius: '0.5rem',
+              background: colors.backgroundCard,
+              color: colors.text,
+              cursor: fixingTransactions ? 'wait' : 'pointer',
+              opacity: fixingTransactions ? 0.7 : 1
+            }}
+          >
+            <Wrench size={18} className={fixingTransactions ? 'animate-spin' : ''} />
+            {fixingTransactions ? 'Corrigindo...' : 'Corrigir Saldos'}
           </button>
           <button
             onClick={() => setShowTransferModal(true)}

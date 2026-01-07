@@ -806,7 +806,25 @@ function Bills() {
           <p style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '4px' }}>Pago</p>
           <p style={{ fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(summary.paid || 0)}</p>
         </div>
-        <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
+        <div
+          onClick={async () => {
+            try {
+              const { data } = await api.get(`/bills/overdue-debug?month=${selectedMonth}&year=${selectedYear}`)
+              const items = [...(data.overdueBills || []), ...(data.overdueRecurrings || [])]
+              if (items.length === 0) {
+                alert('Nenhuma conta atrasada encontrada no debug!')
+              } else {
+                alert('Contas atrasadas:\n\n' + items.map(i => `- ${i.name} (dia ${i.dueDay || i.dayOfMonth}, R$ ${i.amount})`).join('\n'))
+              }
+              console.log('Debug atrasadas:', data)
+            } catch (e) {
+              console.error('Erro debug:', e)
+              alert('Erro ao buscar debug: ' + (e.response?.data?.message || e.message))
+            }
+          }}
+          style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}`, cursor: 'pointer' }}
+          title="Clique para ver detalhes das contas atrasadas"
+        >
           <p style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '4px' }}>Atrasadas</p>
           <p style={{ fontSize: '20px', fontWeight: '700', color: summary.overdueCount > 0 ? '#ef4444' : '#22c55e' }}>{summary.overdueCount || 0}</p>
         </div>

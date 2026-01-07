@@ -183,6 +183,7 @@ function Bills() {
       setEditingBill(null)
       resetForm()
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao salvar conta:', error)
@@ -199,6 +200,7 @@ function Bills() {
         dueDay: bill.dueDay // Enviar dia de vencimento para recorrências semanais
       })
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar conta:', error)
@@ -219,6 +221,7 @@ function Bills() {
     try {
       await api.delete(`/bills/${bill._id}`)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir conta:', error)
@@ -237,6 +240,7 @@ function Bills() {
       setShowDeleteModal(false)
       setSelectedBill(null)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir deste mês:', error)
@@ -253,6 +257,7 @@ function Bills() {
       setShowDeleteModal(false)
       setSelectedBill(null)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao excluir recorrência:', error)
@@ -282,6 +287,7 @@ function Bills() {
       })
       setShowActionModal(false)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pular mês:', error)
@@ -304,6 +310,7 @@ function Bills() {
       })
       setShowActionModal(false)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao pagar com desconto:', error)
@@ -326,6 +333,7 @@ function Bills() {
       })
       setShowActionModal(false)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao registrar pagamento parcial:', error)
@@ -350,6 +358,7 @@ function Bills() {
       setCustomAmount('')
       setActionNotes('')
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
       toast.success('Valor alterado para este mês!')
     } catch (error) {
@@ -380,6 +389,7 @@ function Bills() {
       setCustomDueDate('')
       setActionNotes('')
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
       toast.success('Data de vencimento alterada para este mês!')
     } catch (error) {
@@ -403,6 +413,7 @@ function Bills() {
       })
       setShowActionModal(false)
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao desfazer alteração:', error)
@@ -599,6 +610,7 @@ function Bills() {
 
       // Refresh bills list
       await fetchBills()
+      await new Promise(r => setTimeout(r, 300))
       await fetchSummary()
     } catch (error) {
       console.error('Erro ao importar:', error)
@@ -675,6 +687,7 @@ function Bills() {
     setSelectedItems([])
     setSelectionMode(false)
     await fetchBills()
+    await new Promise(r => setTimeout(r, 300))
     await fetchSummary()
 
     if (errorCount > 0) {
@@ -719,6 +732,7 @@ function Bills() {
     setSelectedItems([])
     setSelectionMode(false)
     await fetchBills()
+    await new Promise(r => setTimeout(r, 300))
     await fetchSummary()
 
     if (errorCount > 0) {

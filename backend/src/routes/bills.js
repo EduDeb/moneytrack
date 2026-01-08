@@ -526,6 +526,10 @@ router.get('/summary', async (req, res) => {
 
       // Calcular dia de vencimento para este mês (usando horário local, igual ao debug)
       let dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
+      // Aplicar dueDateOverride se existir (quando usuário alterou data para este mês)
+      if (override?.dueDateOverride) {
+        dueDay = override.dueDateOverride
+      }
       const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate()
       if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
 
@@ -629,6 +633,7 @@ router.get('/overdue-debug', async (req, res) => {
     // Recorrências
     const Recurring = require('../models/Recurring')
     const RecurringPayment = require('../models/RecurringPayment')
+    const RecurringOverride = require('../models/RecurringOverride')
 
     const recurrings = await Recurring.find({
       user: req.user._id,
@@ -643,11 +648,24 @@ router.get('/overdue-debug', async (req, res) => {
     })
     const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
 
+    // Buscar overrides para aplicar dueDateOverride
+    const overrides = await RecurringOverride.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    })
+    const overrideMap = new Map(overrides.map(o => [o.recurring.toString(), o]))
+
     const overdueRecurrings = recurrings.filter(r => {
       const isPaid = paidRecurringIds.has(r._id.toString())
       if (isPaid) return false
 
+      const override = overrideMap.get(r._id.toString())
       let dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
+      // Aplicar dueDateOverride se existir
+      if (override?.dueDateOverride) {
+        dueDay = override.dueDateOverride
+      }
       const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate()
       if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
 

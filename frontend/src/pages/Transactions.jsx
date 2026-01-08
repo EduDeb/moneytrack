@@ -8,6 +8,18 @@ import MonthSelector from '../components/MonthSelector'
 import SortToggle from '../components/SortToggle'
 import { TransactionListSkeleton, CardSkeleton } from '../components/Skeleton'
 
+// Normaliza label de categoria para value do dropdown
+const normalizeCategory = (categoryLabel) => {
+  if (!categoryLabel) return ''
+  return categoryLabel
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/[^a-z0-9]/g, '_')      // Substitui caracteres especiais
+    .replace(/_+/g, '_')             // Remove underscores duplicados
+    .replace(/^_|_$/g, '')           // Remove underscores início/fim
+}
+
 function Transactions() {
   const { colors, isDark } = useContext(ThemeContext)
   const { categories, incomeCategories, expenseCategories, categoryLabels, getCategoryLabel } = useCategories()
@@ -58,9 +70,10 @@ function Transactions() {
 
       if (data.category && data.confidence >= 70) {
         // Auto-preencher categoria se confiança alta
+        const normalizedCategory = normalizeCategory(data.category)
         setForm(prev => ({
           ...prev,
-          category: data.category,
+          category: normalizedCategory,
           type: data.type || prev.type
         }))
         setAutoFilled(true)
@@ -101,7 +114,7 @@ function Transactions() {
     setForm(prev => ({
       ...prev,
       description: suggestion.description,
-      category: suggestion.category,
+      category: normalizeCategory(suggestion.category),
       type: suggestion.type || prev.type
     }))
     setAutoFilled(true)

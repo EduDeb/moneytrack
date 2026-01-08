@@ -100,12 +100,7 @@ router.post('/register',
       });
     } catch (error) {
       console.error('[AUTH ERROR] Registro:', error.message);
-      console.error('[AUTH ERROR] Stack:', error.stack);
-      // Temporário: incluir detalhes para debug
-      res.status(500).json({
-        message: 'Erro ao criar conta. Tente novamente.',
-        debug: process.env.NODE_ENV !== 'production' ? error.message : undefined
-      });
+      res.status(500).json({ message: 'Erro ao criar conta. Tente novamente.' });
     }
   }
 );

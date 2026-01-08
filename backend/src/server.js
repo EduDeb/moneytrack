@@ -85,12 +85,7 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.message);
-  console.error('[ERROR STACK]', err.stack);
-  // TEMPORÁRIO: mostrar erro para debug (remover depois)
-  res.status(500).json({
-    message: 'Erro interno do servidor',
-    error: err.message
-  });
+  res.status(500).json({ message: 'Erro interno do servidor' });
 });
 
 // ============================================

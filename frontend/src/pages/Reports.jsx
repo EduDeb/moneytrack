@@ -30,6 +30,16 @@ const periodOptions = [
 const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
+// Gera opções de ano dinamicamente (ano atual -3 até +1)
+const generateYearOptions = () => {
+  const currentYear = new Date().getFullYear()
+  const years = []
+  for (let i = currentYear - 3; i <= currentYear + 1; i++) {
+    years.push(i)
+  }
+  return years
+}
+
 function Reports() {
   const { colors, isDark } = useContext(ThemeContext)
   const { categoryLabels, getCategoryLabel } = useCategories()
@@ -343,7 +353,7 @@ function Reports() {
               backgroundColor: colors.backgroundCard, color: colors.text
             }}
           >
-            {[2023, 2024, 2025, 2026].map(y => (
+            {generateYearOptions().map(y => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
@@ -543,7 +553,7 @@ function Reports() {
                     onChange={(e) => setCompareYear(parseInt(e.target.value))}
                     style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text }}
                   >
-                    {[2023, 2024, 2025].map(y => (
+                    {generateYearOptions().map(y => (
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>

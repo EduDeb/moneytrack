@@ -133,9 +133,25 @@ router.get('/summary', async (req, res) => {
       .map(([date, data]) => ({ date, ...data }))
       .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-    // Dias no período
-    const daysInPeriod = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
-    const dailyAverage = expenses / (daysInPeriod || 1)
+    // Dias no período - para mês atual, usar dias passados (não dias totais)
+    let daysInPeriod = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+
+    const now = new Date()
+    const currentMonth = now.getMonth() + 1
+    const currentYear = now.getFullYear()
+
+    // Verificar se é o mês atual
+    const isCurrentMonth = (
+      (month && year && parseInt(month) === currentMonth && parseInt(year) === currentYear) ||
+      (period === 'month' && !month && !year)
+    )
+
+    // Se for o mês atual, usar dias passados até hoje
+    if (isCurrentMonth) {
+      daysInPeriod = now.getDate()
+    }
+
+    const dailyAverage = roundMoney(expenses / (daysInPeriod || 1))
 
     res.json({
       period: { startDate, endDate, days: daysInPeriod },

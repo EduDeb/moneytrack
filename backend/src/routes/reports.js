@@ -642,37 +642,66 @@ router.get('/export/all', async (req, res) => {
 router.get('/export/bills', async (req, res) => {
   try {
     const { month, year, format = 'pdf', status = 'all' } = req.query
-    const m = parseInt(month) || new Date().getMonth() + 1
-    const y = parseInt(year) || new Date().getFullYear()
+    const currentMonth = parseInt(month) || new Date().getMonth() + 1
+    const currentYear = parseInt(year) || new Date().getFullYear()
 
     const Recurring = require('../models/Recurring')
     const RecurringPayment = require('../models/RecurringPayment')
+    const RecurringOverride = require('../models/RecurringOverride')
 
     // 1. Buscar Bills diretas do mês
     const billQuery = {
       user: req.user._id,
-      currentMonth: m,
-      currentYear: y
+      currentMonth,
+      currentYear
     }
     if (status === 'pending') billQuery.isPaid = false
     else if (status === 'paid') billQuery.isPaid = true
 
     const directBills = await Bill.find(billQuery).sort({ dueDay: 1 })
 
-    // 2. Buscar Recurring (despesas recorrentes) ativas
+    // 2. Buscar Recurring COM FILTRO DE PERÍODO (igual /api/bills)
+    const startOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0))
+    const endOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0, 23, 59, 59, 999))
+
     const recurrings = await Recurring.find({
       user: req.user._id,
+      type: 'expense',
       isActive: true,
-      type: 'expense'
+      startDate: { $lte: endOfMonth },
+      $or: [
+        { endDate: { $exists: false } },
+        { endDate: null },
+        { endDate: { $gte: startOfMonth } }
+      ]
     })
 
     // 3. Buscar pagamentos de recorrentes neste mês
     const payments = await RecurringPayment.find({
       user: req.user._id,
-      month: m,
-      year: y
+      month: currentMonth,
+      year: currentYear
     })
-    const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
+
+    // Criar Map de pagamentos (igual /api/bills)
+    const paidRecurringMap = new Map()
+    payments.forEach(p => {
+      const recurringKey = p.recurring.toString()
+      if (p.dueDay) {
+        paidRecurringMap.set(`${recurringKey}_${p.dueDay}`, true)
+      }
+      if (!paidRecurringMap.has(recurringKey)) {
+        paidRecurringMap.set(recurringKey, { paidAt: p.paidAt })
+      }
+    })
+
+    // 4. Buscar overrides do mês
+    const overrides = await RecurringOverride.find({
+      user: req.user._id,
+      month: currentMonth,
+      year: currentYear
+    })
+    const overridesMap = new Map(overrides.map(o => [o.recurring.toString(), o]))
 
     // Processar Bills diretas
     const processedDirectBills = directBills.map(b => ({
@@ -686,27 +715,89 @@ router.get('/export/bills', async (req, res) => {
       recorrente: 'Não'
     }))
 
-    // Processar Recurring como bills
-    const processedRecurrings = recurrings.map(r => {
-      const isPaid = paidRecurringIds.has(r._id.toString())
-      const dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
-      return {
-        nome: r.name,
-        categoria: categoryLabels[r.category] || r.category,
-        valor: r.amount,
-        dia_vencimento: dueDay,
-        status: isPaid ? 'Pago' : 'Pendente',
-        valor_pago: isPaid ? r.amount : null,
-        data_pagamento: null,
-        recorrente: 'Sim'
+    // Processar Recurring como bills (igual /api/bills)
+    const processedRecurrings = []
+    const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate()
+
+    recurrings.forEach(r => {
+      const recurringStartDate = new Date(r.startDate)
+      const recurringStartMonth = recurringStartDate.getUTCMonth() + 1
+      const recurringStartYear = recurringStartDate.getUTCFullYear()
+
+      // Se começa depois do mês atual, não mostrar
+      if (recurringStartYear > currentYear ||
+          (recurringStartYear === currentYear && recurringStartMonth > currentMonth)) {
+        return
+      }
+
+      const override = overridesMap.get(r._id.toString())
+
+      // Se for skip, não incluir
+      if (override?.type === 'skip') return
+
+      const finalAmount = override?.amount ?? r.amount
+      const finalName = override?.name ?? r.name
+
+      if (r.frequency === 'weekly') {
+        // Processar semanais: gerar múltiplas instâncias
+        const dayOfWeek = r.dayOfWeek !== undefined ? r.dayOfWeek : recurringStartDate.getUTCDay()
+        const firstOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1, 12, 0, 0))
+        const firstDayOfWeek = firstOfMonth.getUTCDay()
+        let daysToAdd = (dayOfWeek - firstDayOfWeek + 7) % 7
+        let currentDay = 1 + daysToAdd
+        let weekNumber = 1
+
+        while (currentDay <= lastDayOfMonth) {
+          const paymentKey = `${r._id.toString()}_${currentDay}`
+          const isPaid = paidRecurringMap.has(paymentKey) || paidRecurringMap.has(r._id.toString())
+
+          processedRecurrings.push({
+            nome: `${finalName} (Sem ${weekNumber})`,
+            categoria: categoryLabels[r.category] || r.category,
+            valor: finalAmount,
+            dia_vencimento: currentDay,
+            status: isPaid ? 'Pago' : 'Pendente',
+            valor_pago: isPaid ? finalAmount : null,
+            data_pagamento: null,
+            recorrente: 'Sim'
+          })
+
+          currentDay += 7
+          weekNumber++
+        }
+      } else {
+        // Processar mensais
+        let dueDay = r.dayOfMonth || recurringStartDate.getUTCDate()
+        if (override?.dueDateOverride) dueDay = override.dueDateOverride
+        if (dueDay > lastDayOfMonth) dueDay = lastDayOfMonth
+
+        // Verificar parcelamentos
+        if (r.isInstallment) {
+          const monthsDiff = (currentYear - recurringStartYear) * 12 + (currentMonth - recurringStartMonth)
+          const installmentNumber = monthsDiff + 1
+          if (installmentNumber > r.totalInstallments || installmentNumber < 1) return
+        }
+
+        const isPaid = paidRecurringMap.has(r._id.toString())
+
+        processedRecurrings.push({
+          nome: finalName,
+          categoria: categoryLabels[r.category] || r.category,
+          valor: finalAmount,
+          dia_vencimento: dueDay,
+          status: isPaid ? 'Pago' : 'Pendente',
+          valor_pago: isPaid ? finalAmount : null,
+          data_pagamento: null,
+          recorrente: 'Sim'
+        })
       }
     })
 
-    // Combinar e ordenar por dia de vencimento
+    // Combinar e ordenar
     let allBills = [...processedDirectBills, ...processedRecurrings]
       .sort((a, b) => a.dia_vencimento - b.dia_vencimento)
 
-    // Filtrar por status se necessário
+    // Filtrar por status
     if (status === 'pending') {
       allBills = allBills.filter(b => b.status === 'Pendente')
     } else if (status === 'paid') {
@@ -718,7 +809,7 @@ router.get('/export/bills', async (req, res) => {
 
     const filteredBills = allBills
 
-    const fileName = `contas_${m}_${y}_${status}`
+    const fileName = `contas_${currentMonth}_${currentYear}_${status}`
 
     // Calcular totais
     const totalAmount = filteredBills.reduce((s, b) => s + b.valor, 0)
@@ -781,7 +872,7 @@ router.get('/export/bills', async (req, res) => {
         // Título
         doc.fontSize(20).text('MoneyTrack - Contas a Pagar', { align: 'center' })
         doc.moveDown()
-        doc.fontSize(12).text(`${monthNames[m - 1]} de ${y}`, { align: 'center' })
+        doc.fontSize(12).text(`${monthNames[currentMonth - 1]} de ${currentYear}`, { align: 'center' })
         doc.moveDown(2)
 
         // Resumo
@@ -843,8 +934,8 @@ router.get('/export/bills', async (req, res) => {
         res.setHeader('Content-Type', 'application/json')
         res.setHeader('Content-Disposition', `attachment; filename=${fileName}.json`)
         return res.json({
-          month: m,
-          year: y,
+          month: currentMonth,
+          year: currentYear,
           status,
           summary: { total: totalAmount, pending: totalPending, paid: totalPaid, count: filteredBills.length },
           bills: filteredBills

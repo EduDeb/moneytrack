@@ -645,41 +645,78 @@ router.get('/export/bills', async (req, res) => {
     const m = parseInt(month) || new Date().getMonth() + 1
     const y = parseInt(year) || new Date().getFullYear()
 
-    // Buscar contas do mês
-    const query = {
+    const Recurring = require('../models/Recurring')
+    const RecurringPayment = require('../models/RecurringPayment')
+
+    // 1. Buscar Bills diretas do mês
+    const billQuery = {
       user: req.user._id,
       currentMonth: m,
       currentYear: y
     }
+    if (status === 'pending') billQuery.isPaid = false
+    else if (status === 'paid') billQuery.isPaid = true
 
-    // Filtrar por status
-    if (status === 'pending') {
-      query.isPaid = false
-    } else if (status === 'paid') {
-      query.isPaid = true
-    }
-    // status === 'all' não adiciona filtro de isPaid
+    const directBills = await Bill.find(billQuery).sort({ dueDay: 1 })
 
-    const bills = await Bill.find(query).sort({ dueDay: 1 })
-    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+    // 2. Buscar Recurring (despesas recorrentes) ativas
+    const recurrings = await Recurring.find({
+      user: req.user._id,
+      isActive: true,
+      type: 'expense'
+    })
 
-    // Processar contas com informações do mês específico
-    const processedBills = bills.map(b => {
+    // 3. Buscar pagamentos de recorrentes neste mês
+    const payments = await RecurringPayment.find({
+      user: req.user._id,
+      month: m,
+      year: y
+    })
+    const paidRecurringIds = new Set(payments.map(p => p.recurring.toString()))
+
+    // Processar Bills diretas
+    const processedDirectBills = directBills.map(b => ({
+      nome: b.name,
+      categoria: categoryLabels[b.category] || b.category,
+      valor: b.amount,
+      dia_vencimento: b.dueDay,
+      status: b.isPaid ? 'Pago' : 'Pendente',
+      valor_pago: b.isPaid ? b.amount : null,
+      data_pagamento: b.isPaid && b.paidAt ? new Date(b.paidAt).toLocaleDateString('pt-BR') : null,
+      recorrente: 'Não'
+    }))
+
+    // Processar Recurring como bills
+    const processedRecurrings = recurrings.map(r => {
+      const isPaid = paidRecurringIds.has(r._id.toString())
+      const dueDay = r.dayOfMonth || new Date(r.startDate).getDate()
       return {
-        nome: b.name,
-        categoria: categoryLabels[b.category] || b.category,
-        valor: b.amount,
-        dia_vencimento: b.dueDay,
-        status: b.isPaid ? 'Pago' : 'Pendente',
-        valor_pago: b.isPaid ? b.amount : null,
-        data_pagamento: b.isPaid && b.paidAt ? new Date(b.paidAt).toLocaleDateString('pt-BR') : null,
-        recorrente: b.isRecurring ? 'Sim' : 'Não'
+        nome: r.name,
+        categoria: categoryLabels[r.category] || r.category,
+        valor: r.amount,
+        dia_vencimento: dueDay,
+        status: isPaid ? 'Pago' : 'Pendente',
+        valor_pago: isPaid ? r.amount : null,
+        data_pagamento: null,
+        recorrente: 'Sim'
       }
     })
 
-    // Bills já vem filtradas pela query, mas mantemos para garantir
-    const filteredBills = processedBills
+    // Combinar e ordenar por dia de vencimento
+    let allBills = [...processedDirectBills, ...processedRecurrings]
+      .sort((a, b) => a.dia_vencimento - b.dia_vencimento)
+
+    // Filtrar por status se necessário
+    if (status === 'pending') {
+      allBills = allBills.filter(b => b.status === 'Pendente')
+    } else if (status === 'paid') {
+      allBills = allBills.filter(b => b.status === 'Pago')
+    }
+
+    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+
+    const filteredBills = allBills
 
     const fileName = `contas_${m}_${y}_${status}`
 

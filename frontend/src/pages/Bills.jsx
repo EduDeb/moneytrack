@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useRef, useMemo } from 'react'
 import api from '../services/api'
 import toast from 'react-hot-toast'
 import * as LucideIcons from 'lucide-react'
-import { Plus, Trash2, Edit2, X, Check, MoreHorizontal, Calendar, RefreshCw, Upload, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2 } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Check, MoreHorizontal, Calendar, RefreshCw, Upload, Download, FileText, AlertCircle, CheckCircle, Loader, CheckSquare, Square, XCircle, SkipForward, Percent, DollarSign, Info, Undo2, FileSpreadsheet, File, Database } from 'lucide-react'
 import { ThemeContext } from '../contexts/ThemeContext'
 import { useCategories } from '../contexts/CategoriesContext'
 import MonthSelector from '../components/MonthSelector'
@@ -81,6 +81,11 @@ function Bills() {
 
   // Modal de exclusão (para escolher: só este mês ou todos)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+
+  // Export modal
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportFormat, setExportFormat] = useState('pdf')
+  const [exportStatus, setExportStatus] = useState('all') // 'all', 'pending', 'paid'
 
   const handleMonthChange = (month, year) => {
     setSelectedMonth(month)
@@ -454,6 +459,32 @@ function Bills() {
     }).format(value)
   }
 
+  // Export bills function
+  const handleExportBills = async () => {
+    try {
+      const mimeTypes = {
+        csv: 'text/csv;charset=utf-8;',
+        excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        pdf: 'application/pdf',
+        json: 'application/json'
+      }
+      const extensions = { csv: 'csv', excel: 'xlsx', pdf: 'pdf', json: 'json' }
+
+      const url = `/reports/export/bills?month=${selectedMonth}&year=${selectedYear}&format=${exportFormat}&status=${exportStatus}`
+      const response = await api.get(url, { responseType: 'blob' })
+      const blob = new Blob([response.data], { type: mimeTypes[exportFormat] })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `contas_${selectedMonth}_${selectedYear}_${exportStatus}.${extensions[exportFormat]}`
+      link.click()
+      setShowExportModal(false)
+      toast.success('Exportação realizada com sucesso!')
+    } catch (error) {
+      console.error('Erro ao exportar:', error)
+      toast.error('Erro ao exportar. Tente novamente.')
+    }
+  }
+
   // Get urgency colors that adapt to dark mode
   const getUrgencyColors = (urgency) => {
     const base = urgencyColors[urgency] || urgencyColors.normal
@@ -753,6 +784,24 @@ function Bills() {
           onChange={handleMonthChange}
         />
         <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => setShowExportModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              backgroundColor: '#22c55e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Download size={18} />
+            Exportar
+          </button>
           <button
             onClick={openImportModal}
             style={{
@@ -2823,6 +2872,115 @@ Netflix - R$ 55,90"
                 }}
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exportação */}
+      {showExportModal && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '16px'
+        }}>
+          <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px', border: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: colors.text }}>Exportar Contas</h2>
+              <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={20} color={colors.textSecondary} />
+              </button>
+            </div>
+
+            {/* Filtro de status */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: colors.text, fontSize: '14px' }}>
+                Quais contas exportar?
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[
+                  { value: 'all', label: 'Todas' },
+                  { value: 'pending', label: 'Pendentes' },
+                  { value: 'paid', label: 'Pagas' }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setExportStatus(opt.value)}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: '8px',
+                      border: exportStatus === opt.value ? '2px solid #3b82f6' : `1px solid ${colors.border}`,
+                      backgroundColor: exportStatus === opt.value ? (isDark ? 'rgba(59,130,246,0.2)' : '#eff6ff') : colors.backgroundCard,
+                      color: exportStatus === opt.value ? '#3b82f6' : colors.textSecondary,
+                      fontSize: '13px', cursor: 'pointer', fontWeight: exportStatus === opt.value ? '600' : '400'
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Formato */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: colors.text, fontSize: '14px' }}>
+                Formato
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                {[
+                  { value: 'pdf', label: 'PDF', icon: File, color: '#ef4444' },
+                  { value: 'csv', label: 'CSV', icon: FileText, color: '#22c55e' },
+                  { value: 'excel', label: 'Excel', icon: FileSpreadsheet, color: '#16a34a' },
+                  { value: 'json', label: 'JSON', icon: Database, color: '#8b5cf6' }
+                ].map(opt => {
+                  const Icon = opt.icon
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => setExportFormat(opt.value)}
+                      style={{
+                        padding: '12px 8px', borderRadius: '8px',
+                        border: exportFormat === opt.value ? `2px solid ${opt.color}` : `1px solid ${colors.border}`,
+                        backgroundColor: exportFormat === opt.value ? `${opt.color}15` : colors.backgroundCard,
+                        color: exportFormat === opt.value ? opt.color : colors.textSecondary,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                        cursor: 'pointer', fontWeight: exportFormat === opt.value ? '600' : '400'
+                      }}
+                    >
+                      <Icon size={18} />
+                      <span style={{ fontSize: '11px' }}>{opt.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Info do período */}
+            <div style={{ backgroundColor: isDark ? colors.border : '#f9fafb', borderRadius: '8px', padding: '12px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '12px', color: colors.textSecondary }}>
+                Período: <strong style={{ color: colors.text }}>{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</strong>
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowExportModal(false)}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text, fontWeight: '500', cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleExportBills}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  border: 'none', backgroundColor: '#22c55e', color: 'white',
+                  fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                }}
+              >
+                <Download size={18} />
+                Exportar
               </button>
             </div>
           </div>

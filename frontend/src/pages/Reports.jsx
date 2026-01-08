@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import {
   FileText, Download, Upload, Calendar, ChevronLeft, ChevronRight,
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Filter,
-  BarChart2, PieChart as PieChartIcon, X, FileSpreadsheet, File, Database
+  BarChart2, PieChart as PieChartIcon, X, FileSpreadsheet, File, Database, List
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -62,6 +62,8 @@ function Reports() {
   const [compareMonth2, setCompareMonth2] = useState(new Date().getMonth() + 1)
   const [compareYear, setCompareYear] = useState(new Date().getFullYear())
   const [comparison, setComparison] = useState(null)
+  const [monthlyTransactions, setMonthlyTransactions] = useState([])
+  const [monthlyLoading, setMonthlyLoading] = useState(false)
 
   useEffect(() => {
     fetchReport()
@@ -106,6 +108,19 @@ function Reports() {
       setComparison(response.data)
     } catch (error) {
       console.error('Erro ao comparar:', error)
+    }
+  }
+
+  const fetchMonthlyTransactions = async () => {
+    setMonthlyLoading(true)
+    try {
+      const response = await api.get(`/transactions?month=${selectedMonth}&year=${selectedYear}&limit=1000`)
+      setMonthlyTransactions(response.data.transactions || response.data || [])
+    } catch (error) {
+      console.error('Erro ao buscar transações:', error)
+      setMonthlyTransactions([])
+    } finally {
+      setMonthlyLoading(false)
     }
   }
 
@@ -365,6 +380,7 @@ function Reports() {
         {[
           { id: 'overview', label: 'Visão Geral', icon: BarChart2 },
           { id: 'categories', label: 'Categorias', icon: PieChartIcon },
+          { id: 'monthly', label: 'Mensal Detalhado', icon: List },
           { id: 'compare', label: 'Comparar', icon: TrendingUp },
           { id: 'yearly', label: 'Anual', icon: Calendar }
         ].map(tab => {
@@ -375,6 +391,7 @@ function Reports() {
               onClick={() => {
                 setActiveTab(tab.id)
                 if (tab.id === 'compare') fetchComparison()
+                if (tab.id === 'monthly') fetchMonthlyTransactions()
               }}
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -519,6 +536,114 @@ function Reports() {
                     )
                   })}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Mensal Detalhado */}
+          {activeTab === 'monthly' && (
+            <div>
+              {/* Cards de resumo */}
+              {report && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <TrendingUp size={16} color="#22c55e" />
+                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>Receitas</span>
+                    </div>
+                    <p style={{ fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>
+                      {formatCurrency(report.totals?.income)}
+                    </p>
+                  </div>
+                  <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <TrendingDown size={16} color="#ef4444" />
+                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>Despesas</span>
+                    </div>
+                    <p style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>
+                      {formatCurrency(report.totals?.expenses)}
+                    </p>
+                  </div>
+                  <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <FileText size={16} color="#3b82f6" />
+                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>Saldo</span>
+                    </div>
+                    <p style={{ fontSize: '20px', fontWeight: '700', color: report.totals?.balance >= 0 ? '#22c55e' : '#ef4444' }}>
+                      {formatCurrency(report.totals?.balance)}
+                    </p>
+                  </div>
+                  <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '16px', border: `1px solid ${colors.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <List size={16} color="#8b5cf6" />
+                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>Transações</span>
+                    </div>
+                    <p style={{ fontSize: '20px', fontWeight: '700', color: '#8b5cf6' }}>
+                      {monthlyTransactions.length}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Header com botão de exportar PDF */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontWeight: '600', color: colors.text }}>
+                  Transações de {monthNames[selectedMonth - 1]} {selectedYear}
+                </h3>
+                <button
+                  onClick={() => handleExport('pdf', 'transactions')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px',
+                    backgroundColor: '#ef4444', color: 'white', border: 'none',
+                    borderRadius: '8px', fontWeight: '500', cursor: 'pointer'
+                  }}
+                >
+                  <File size={16} />
+                  Exportar PDF
+                </button>
+              </div>
+
+              {/* Tabela de transações */}
+              <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}`, overflowX: 'auto' }}>
+                {monthlyLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary }}>Carregando...</div>
+                ) : monthlyTransactions.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: colors.textSecondary }}>
+                    Nenhuma transação encontrada para este período
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: `2px solid ${colors.border}` }}>
+                        <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '13px', color: colors.textSecondary }}>Data</th>
+                        <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '13px', color: colors.textSecondary }}>Descrição</th>
+                        <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '13px', color: colors.textSecondary }}>Categoria</th>
+                        <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '13px', color: colors.textSecondary }}>Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyTransactions.map((t) => (
+                        <tr key={t._id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                          <td style={{ padding: '12px 8px', color: colors.textSecondary, fontSize: '13px' }}>
+                            {new Date(t.date).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td style={{ padding: '12px 8px', color: colors.text, fontWeight: '500' }}>
+                            {t.description}
+                          </td>
+                          <td style={{ padding: '12px 8px', color: colors.textSecondary, fontSize: '13px' }}>
+                            {getCategoryLabel(t.category) || t.category}
+                          </td>
+                          <td style={{
+                            padding: '12px 8px', textAlign: 'right', fontWeight: '600',
+                            color: t.type === 'income' ? '#22c55e' : '#ef4444'
+                          }}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(t.amount))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}

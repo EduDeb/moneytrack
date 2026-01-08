@@ -637,4 +637,193 @@ router.get('/export/all', async (req, res) => {
   }
 })
 
+// @route   GET /api/reports/export/bills
+// @desc    Exportar contas a pagar com filtros (mês, ano, status)
+router.get('/export/bills', async (req, res) => {
+  try {
+    const { month, year, format = 'pdf', status = 'all' } = req.query
+    const m = parseInt(month) || new Date().getMonth() + 1
+    const y = parseInt(year) || new Date().getFullYear()
+
+    // Buscar contas do mês
+    const query = { user: req.user._id }
+
+    // Filtrar por status
+    if (status === 'pending') {
+      query['$or'] = [
+        { [`paidMonths.${y}-${String(m).padStart(2, '0')}`]: { $exists: false } },
+        { [`paidMonths.${y}-${String(m).padStart(2, '0')}.paid`]: false }
+      ]
+    } else if (status === 'paid') {
+      query[`paidMonths.${y}-${String(m).padStart(2, '0')}.paid`] = true
+    }
+
+    const bills = await Bill.find(query).sort({ dueDay: 1 })
+    const monthKey = `${y}-${String(m).padStart(2, '0')}`
+    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+
+    // Processar contas com informações do mês específico
+    const processedBills = bills.map(b => {
+      const paidInfo = b.paidMonths?.get(monthKey)
+      const isPaid = paidInfo?.paid || false
+      const paidAmount = paidInfo?.paidAmount || b.amount
+      const paidDate = paidInfo?.paidDate
+
+      return {
+        nome: b.name,
+        categoria: categoryLabels[b.category] || b.category,
+        valor: b.amount,
+        dia_vencimento: b.dueDay,
+        status: isPaid ? 'Pago' : 'Pendente',
+        valor_pago: isPaid ? paidAmount : null,
+        data_pagamento: isPaid && paidDate ? new Date(paidDate).toLocaleDateString('pt-BR') : null,
+        recorrente: b.isRecurring ? 'Sim' : 'Não'
+      }
+    })
+
+    // Filtrar novamente para garantir corretude (pois a query do MongoDB com Map é complexa)
+    const filteredBills = status === 'all' ? processedBills :
+      status === 'pending' ? processedBills.filter(b => b.status === 'Pendente') :
+      processedBills.filter(b => b.status === 'Pago')
+
+    const fileName = `contas_${m}_${y}_${status}`
+
+    // Calcular totais
+    const totalAmount = filteredBills.reduce((s, b) => s + b.valor, 0)
+    const totalPending = filteredBills.filter(b => b.status === 'Pendente').reduce((s, b) => s + b.valor, 0)
+    const totalPaid = filteredBills.filter(b => b.status === 'Pago').reduce((s, b) => s + (b.valor_pago || b.valor), 0)
+
+    switch (format) {
+      case 'csv': {
+        if (filteredBills.length === 0) {
+          return res.status(400).json({ message: 'Nenhuma conta para exportar' })
+        }
+        const headers = ['nome', 'categoria', 'valor', 'dia_vencimento', 'status', 'recorrente']
+        const headerRow = headers.join(',')
+        const rows = filteredBills.map(row =>
+          headers.map(h =>
+            typeof row[h] === 'string' ? `"${row[h].replace(/"/g, '""')}"` :
+            typeof row[h] === 'number' ? row[h].toFixed(2).replace('.', ',') : row[h]
+          ).join(',')
+        ).join('\n')
+        const csv = `${headerRow}\n${rows}`
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename=${fileName}.csv`)
+        return res.send('\uFEFF' + csv)
+      }
+
+      case 'excel': {
+        const data = filteredBills.map(b => ({
+          Nome: b.nome,
+          Categoria: b.categoria,
+          Valor: b.valor,
+          'Dia Vencimento': b.dia_vencimento,
+          Status: b.status,
+          'Valor Pago': b.valor_pago || '',
+          'Data Pagamento': b.data_pagamento || '',
+          Recorrente: b.recorrente
+        }))
+        const ws = XLSX.utils.json_to_sheet(data)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Contas')
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res.setHeader('Content-Disposition', `attachment; filename=${fileName}.xlsx`)
+        return res.send(buffer)
+      }
+
+      case 'pdf': {
+        const doc = new PDFDocument({ margin: 50 })
+        const chunks = []
+
+        doc.on('data', chunk => chunks.push(chunk))
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(chunks)
+          res.setHeader('Content-Type', 'application/pdf')
+          res.setHeader('Content-Disposition', `attachment; filename=${fileName}.pdf`)
+          res.send(pdfBuffer)
+        })
+
+        // Título
+        doc.fontSize(20).text('MoneyTrack - Contas a Pagar', { align: 'center' })
+        doc.moveDown()
+        doc.fontSize(12).text(`${monthNames[m - 1]} de ${y}`, { align: 'center' })
+        doc.moveDown(2)
+
+        // Resumo
+        doc.fontSize(14).text('Resumo', { underline: true })
+        doc.fontSize(11)
+        doc.text(`Total de contas: ${filteredBills.length}`)
+        doc.text(`Valor total: R$ ${totalAmount.toFixed(2).replace('.', ',')}`)
+        doc.fillColor('red').text(`Pendente: R$ ${totalPending.toFixed(2).replace('.', ',')}`)
+        doc.fillColor('green').text(`Pago: R$ ${totalPaid.toFixed(2).replace('.', ',')}`)
+        doc.fillColor('black')
+        doc.moveDown(2)
+
+        // Tabela
+        doc.fontSize(14).text('Detalhamento', { underline: true })
+        doc.moveDown()
+        doc.fontSize(9)
+
+        // Header
+        const headers = ['Nome', 'Categoria', 'Venc.', 'Valor', 'Status']
+        const colWidths = [150, 100, 40, 80, 60]
+        let x = 50
+        let y = doc.y
+        headers.forEach((h, i) => {
+          doc.font('Helvetica-Bold').text(h, x, y, { width: colWidths[i] })
+          x += colWidths[i]
+        })
+        doc.font('Helvetica')
+        doc.moveDown()
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
+        doc.moveDown(0.5)
+
+        // Linhas
+        filteredBills.forEach(bill => {
+          if (doc.y > 700) {
+            doc.addPage()
+          }
+          x = 50
+          y = doc.y
+          doc.text(bill.nome.substring(0, 25), x, y, { width: colWidths[0] })
+          x += colWidths[0]
+          doc.text(bill.categoria.substring(0, 15), x, y, { width: colWidths[1] })
+          x += colWidths[1]
+          doc.text(String(bill.dia_vencimento), x, y, { width: colWidths[2] })
+          x += colWidths[2]
+          doc.text(`R$ ${bill.valor.toFixed(2).replace('.', ',')}`, x, y, { width: colWidths[3] })
+          x += colWidths[3]
+          doc.fillColor(bill.status === 'Pago' ? 'green' : 'red')
+             .text(bill.status, x, y, { width: colWidths[4] })
+          doc.fillColor('black')
+          doc.moveDown(0.5)
+        })
+
+        doc.end()
+        return
+      }
+
+      case 'json':
+      default: {
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Content-Disposition', `attachment; filename=${fileName}.json`)
+        return res.json({
+          month: m,
+          year: y,
+          status,
+          summary: { total: totalAmount, pending: totalPending, paid: totalPaid, count: filteredBills.length },
+          bills: filteredBills
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao exportar contas:', error)
+    res.status(500).json({ message: 'Erro ao exportar contas', error: error.message })
+  }
+})
+
 module.exports = router

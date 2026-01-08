@@ -59,8 +59,9 @@ function Reports() {
   const [exportFormat, setExportFormat] = useState('csv')
   const [exportDataType, setExportDataType] = useState('transactions')
   const [compareMonth1, setCompareMonth1] = useState(new Date().getMonth())
+  const [compareYear1, setCompareYear1] = useState(new Date().getFullYear())
   const [compareMonth2, setCompareMonth2] = useState(new Date().getMonth() + 1)
-  const [compareYear, setCompareYear] = useState(new Date().getFullYear())
+  const [compareYear2, setCompareYear2] = useState(new Date().getFullYear())
   const [comparison, setComparison] = useState(null)
   const [monthlyTransactions, setMonthlyTransactions] = useState([])
   const [monthlyLoading, setMonthlyLoading] = useState(false)
@@ -103,7 +104,7 @@ function Reports() {
   const fetchComparison = async () => {
     try {
       const response = await api.get(
-        `/reports/compare?month1=${compareMonth1}&year1=${compareYear}&month2=${compareMonth2}&year2=${compareYear}`
+        `/reports/compare?month1=${compareMonth1}&year1=${compareYear1}&month2=${compareMonth2}&year2=${compareYear2}`
       )
       setComparison(response.data)
     } catch (error) {
@@ -653,7 +654,7 @@ function Reports() {
             <div>
               <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', marginBottom: '24px', border: `1px solid ${colors.border}` }}>
                 <h3 style={{ fontWeight: '600', marginBottom: '16px', color: colors.text }}>Comparar Meses</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <select
                     value={compareMonth1}
                     onChange={(e) => setCompareMonth1(parseInt(e.target.value))}
@@ -663,7 +664,16 @@ function Reports() {
                       <option key={i} value={i + 1}>{m}</option>
                     ))}
                   </select>
-                  <span style={{ color: colors.textSecondary }}>vs</span>
+                  <select
+                    value={compareYear1}
+                    onChange={(e) => setCompareYear1(parseInt(e.target.value))}
+                    style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text }}
+                  >
+                    {generateYearOptions().map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <span style={{ color: colors.textSecondary, fontWeight: '500' }}>vs</span>
                   <select
                     value={compareMonth2}
                     onChange={(e) => setCompareMonth2(parseInt(e.target.value))}
@@ -674,8 +684,8 @@ function Reports() {
                     ))}
                   </select>
                   <select
-                    value={compareYear}
-                    onChange={(e) => setCompareYear(parseInt(e.target.value))}
+                    value={compareYear2}
+                    onChange={(e) => setCompareYear2(parseInt(e.target.value))}
                     style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${colors.border}`, backgroundColor: colors.backgroundCard, color: colors.text }}
                   >
                     {generateYearOptions().map(y => (
@@ -699,7 +709,7 @@ function Reports() {
                   {/* Período 1 */}
                   <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}` }}>
                     <h4 style={{ fontWeight: '600', marginBottom: '16px', color: colors.textSecondary }}>
-                      {monthNames[compareMonth1 - 1]} {compareYear}
+                      {monthNames[compareMonth1 - 1]} {compareYear1}
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -722,7 +732,7 @@ function Reports() {
                   {/* Período 2 */}
                   <div style={{ backgroundColor: colors.backgroundCard, borderRadius: '12px', padding: '20px', border: `1px solid ${colors.border}` }}>
                     <h4 style={{ fontWeight: '600', marginBottom: '16px', color: colors.textSecondary }}>
-                      {monthNames[compareMonth2 - 1]} {compareYear}
+                      {monthNames[compareMonth2 - 1]} {compareYear2}
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>

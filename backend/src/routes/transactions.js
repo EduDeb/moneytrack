@@ -433,6 +433,38 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
+    // Verificar duplicata (a menos que force=true)
+    const { force } = req.body
+    if (!force) {
+      const transactionDate = req.body.date ? new Date(req.body.date) : new Date()
+      const dayStart = new Date(transactionDate)
+      dayStart.setHours(0, 0, 0, 0)
+      const dayEnd = new Date(transactionDate)
+      dayEnd.setHours(23, 59, 59, 999)
+
+      const existingDuplicate = await Transaction.findOne({
+        user: req.user._id,
+        amount: parseFloat(req.body.amount),
+        description: { $regex: new RegExp(`^${req.body.description.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        date: { $gte: dayStart, $lte: dayEnd }
+      })
+
+      if (existingDuplicate) {
+        return res.status(409).json({
+          isDuplicate: true,
+          message: 'Transação similar já existe para esta data',
+          existingTransaction: {
+            _id: existingDuplicate._id,
+            description: existingDuplicate.description,
+            amount: existingDuplicate.amount,
+            date: existingDuplicate.date,
+            category: existingDuplicate.category,
+            type: existingDuplicate.type
+          }
+        })
+      }
+    }
+
     // Normalizar a data para UTC, preservando o dia informado pelo usuário
     const transactionData = {
       ...req.body,

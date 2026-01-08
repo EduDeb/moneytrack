@@ -38,6 +38,11 @@ function Transactions() {
   const debounceRef = useRef(null)
   const descriptionInputRef = useRef(null)
 
+  // Alerta de duplicatas
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [duplicateInfo, setDuplicateInfo] = useState(null)
+  const [pendingTransaction, setPendingTransaction] = useState(null)
+
   // Função para buscar sugestão de categoria baseada na descrição
   const fetchCategorySuggestion = useCallback(async (description) => {
     if (!description || description.trim().length < 2) {
@@ -192,8 +197,20 @@ function Transactions() {
         await api.put(`/transactions/${editingTransaction._id}`, dataToSend)
         toast.success('Transação atualizada com sucesso!')
       } else {
-        await api.post('/transactions', dataToSend)
-        toast.success('Transação criada com sucesso!')
+        try {
+          await api.post('/transactions', dataToSend)
+          toast.success('Transação criada com sucesso!')
+        } catch (error) {
+          // Verificar se é erro de duplicata (409)
+          if (error.response?.status === 409 && error.response?.data?.isDuplicate) {
+            setDuplicateInfo(error.response.data.existingTransaction)
+            setPendingTransaction(dataToSend)
+            setShowDuplicateModal(true)
+            setSubmitting(false)
+            return
+          }
+          throw error
+        }
       }
 
       setShowModal(false)
@@ -207,6 +224,34 @@ function Transactions() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // Forçar criação de transação (ignorar alerta de duplicata)
+  const handleForceCreate = async () => {
+    if (!pendingTransaction) return
+    setSubmitting(true)
+    try {
+      await api.post('/transactions', { ...pendingTransaction, force: true })
+      toast.success('Transação criada com sucesso!')
+      setShowDuplicateModal(false)
+      setDuplicateInfo(null)
+      setPendingTransaction(null)
+      setShowModal(false)
+      setEditingTransaction(null)
+      resetForm()
+      await Promise.all([fetchTransactions(), fetchSummary()])
+    } catch (error) {
+      console.error('Erro ao criar transação:', error)
+      toast.error('Erro ao criar transação. Tente novamente.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const closeDuplicateModal = () => {
+    setShowDuplicateModal(false)
+    setDuplicateInfo(null)
+    setPendingTransaction(null)
   }
 
   const handleDelete = async (id) => {
@@ -894,6 +939,80 @@ function Transactions() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Alerta de Duplicata */}
+      {showDuplicateModal && duplicateInfo && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: colors.backgroundCard, borderRadius: '16px',
+            width: '100%', maxWidth: '420px', overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '20px', borderBottom: `1px solid ${colors.border}`,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ margin: 0, color: colors.text, fontSize: '18px', fontWeight: '600' }}>
+                Transação Duplicada?
+              </h3>
+              <button onClick={closeDuplicateModal} style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: '4px'
+              }}>
+                <X size={20} style={{ color: colors.textSecondary }} />
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ color: colors.text, marginBottom: '16px', fontSize: '14px' }}>
+                Já existe uma transação similar para esta data:
+              </p>
+              <div style={{
+                backgroundColor: isDark ? colors.border : '#f8fafc',
+                padding: '16px', borderRadius: '8px',
+                border: `1px solid ${colors.border}`, marginBottom: '16px'
+              }}>
+                <p style={{ fontWeight: '600', color: colors.text, marginBottom: '4px' }}>
+                  {duplicateInfo.description}
+                </p>
+                <p style={{ color: duplicateInfo.type === 'expense' ? '#ef4444' : '#22c55e', fontSize: '16px', fontWeight: '500', marginBottom: '4px' }}>
+                  {duplicateInfo.type === 'expense' ? '-' : '+'} R$ {duplicateInfo.amount?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+                <p style={{ color: colors.textSecondary, fontSize: '13px' }}>
+                  {new Date(duplicateInfo.date).toLocaleDateString('pt-BR')} • {getCategoryLabel(duplicateInfo.category)}
+                </p>
+              </div>
+              <p style={{ color: colors.textSecondary, fontSize: '13px', marginBottom: '20px' }}>
+                Deseja criar a transação mesmo assim?
+              </p>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={closeDuplicateModal}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '8px',
+                    border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
+                    color: colors.text, fontWeight: '500', cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleForceCreate}
+                  disabled={submitting}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '8px',
+                    border: 'none', backgroundColor: submitting ? '#fca5a5' : '#ef4444',
+                    color: 'white', fontWeight: '500', cursor: submitting ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {submitting ? 'Criando...' : 'Criar Mesmo Assim'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

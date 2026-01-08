@@ -646,46 +646,40 @@ router.get('/export/bills', async (req, res) => {
     const y = parseInt(year) || new Date().getFullYear()
 
     // Buscar contas do mês
-    const query = { user: req.user._id }
+    const query = {
+      user: req.user._id,
+      currentMonth: m,
+      currentYear: y
+    }
 
     // Filtrar por status
     if (status === 'pending') {
-      query['$or'] = [
-        { [`paidMonths.${y}-${String(m).padStart(2, '0')}`]: { $exists: false } },
-        { [`paidMonths.${y}-${String(m).padStart(2, '0')}.paid`]: false }
-      ]
+      query.isPaid = false
     } else if (status === 'paid') {
-      query[`paidMonths.${y}-${String(m).padStart(2, '0')}.paid`] = true
+      query.isPaid = true
     }
+    // status === 'all' não adiciona filtro de isPaid
 
     const bills = await Bill.find(query).sort({ dueDay: 1 })
-    const monthKey = `${y}-${String(m).padStart(2, '0')}`
     const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
     // Processar contas com informações do mês específico
     const processedBills = bills.map(b => {
-      const paidInfo = b.paidMonths?.get(monthKey)
-      const isPaid = paidInfo?.paid || false
-      const paidAmount = paidInfo?.paidAmount || b.amount
-      const paidDate = paidInfo?.paidDate
-
       return {
         nome: b.name,
         categoria: categoryLabels[b.category] || b.category,
         valor: b.amount,
         dia_vencimento: b.dueDay,
-        status: isPaid ? 'Pago' : 'Pendente',
-        valor_pago: isPaid ? paidAmount : null,
-        data_pagamento: isPaid && paidDate ? new Date(paidDate).toLocaleDateString('pt-BR') : null,
+        status: b.isPaid ? 'Pago' : 'Pendente',
+        valor_pago: b.isPaid ? b.amount : null,
+        data_pagamento: b.isPaid && b.paidAt ? new Date(b.paidAt).toLocaleDateString('pt-BR') : null,
         recorrente: b.isRecurring ? 'Sim' : 'Não'
       }
     })
 
-    // Filtrar novamente para garantir corretude (pois a query do MongoDB com Map é complexa)
-    const filteredBills = status === 'all' ? processedBills :
-      status === 'pending' ? processedBills.filter(b => b.status === 'Pendente') :
-      processedBills.filter(b => b.status === 'Pago')
+    // Bills já vem filtradas pela query, mas mantemos para garantir
+    const filteredBills = processedBills
 
     const fileName = `contas_${m}_${y}_${status}`
 

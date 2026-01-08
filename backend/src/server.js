@@ -85,7 +85,11 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.message);
-  res.status(500).json({ message: 'Erro interno do servidor' });
+  console.error('[ERROR STACK]', err.stack);
+  res.status(500).json({
+    message: 'Erro interno do servidor',
+    debug: process.env.NODE_ENV !== 'production' ? err.message : undefined
+  });
 });
 
 // ============================================

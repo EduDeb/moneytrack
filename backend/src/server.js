@@ -86,9 +86,10 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.message);
   console.error('[ERROR STACK]', err.stack);
+  // TEMPORÁRIO: mostrar erro para debug (remover depois)
   res.status(500).json({
     message: 'Erro interno do servidor',
-    debug: process.env.NODE_ENV !== 'production' ? err.message : undefined
+    error: err.message
   });
 });
 

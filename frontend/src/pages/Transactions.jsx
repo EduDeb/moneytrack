@@ -22,7 +22,7 @@ const normalizeCategory = (categoryLabel) => {
 
 function Transactions() {
   const { colors, isDark } = useContext(ThemeContext)
-  const { categories, incomeCategories, expenseCategories, categoryLabels, getCategoryLabel } = useCategories()
+  const { categories, incomeCategories, expenseCategories, categoryLabels, getCategoryLabel, getCategoryByValue } = useCategories()
   const now = new Date()
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
@@ -69,14 +69,18 @@ function Transactions() {
       const data = response.data
 
       if (data.category && data.confidence >= 70) {
-        // Auto-preencher categoria se confiança alta
-        const normalizedCategory = normalizeCategory(data.category)
-        setForm(prev => ({
-          ...prev,
-          category: normalizedCategory,
-          type: data.type || prev.type
-        }))
-        setAutoFilled(true)
+        // Buscar categoria correspondente nas categorias disponíveis
+        const foundCategory = getCategoryByValue(data.category)
+
+        if (foundCategory) {
+          // Usar o value da categoria encontrada (formato correto para o select)
+          setForm(prev => ({
+            ...prev,
+            category: foundCategory.value,
+            type: data.type || prev.type
+          }))
+          setAutoFilled(true)
+        }
         setSuggestions(data.suggestions || [])
       } else if (data.suggestions && data.suggestions.length > 0) {
         setSuggestions(data.suggestions)
@@ -90,9 +94,9 @@ function Transactions() {
     } finally {
       setSuggestLoading(false)
     }
-  }, [])
+  }, [getCategoryByValue])
 
-  // Handler para mudança na descrição com debounce
+  // Handler para mudança na descrição com preenchimento automático
   const handleDescriptionChange = useCallback((e) => {
     const value = e.target.value
     setForm(prev => ({ ...prev, description: value }))
@@ -103,7 +107,7 @@ function Transactions() {
       clearTimeout(debounceRef.current)
     }
 
-    // Configurar novo debounce (300ms)
+    // Preenchimento automático de categoria (baseado em mapeamento + histórico)
     debounceRef.current = setTimeout(() => {
       fetchCategorySuggestion(value)
     }, 300)
@@ -111,16 +115,19 @@ function Transactions() {
 
   // Aplicar sugestão selecionada
   const applySuggestion = useCallback((suggestion) => {
+    // Buscar categoria correspondente nas categorias disponíveis
+    const foundCategory = getCategoryByValue(suggestion.category)
+
     setForm(prev => ({
       ...prev,
       description: suggestion.description,
-      category: normalizeCategory(suggestion.category),
+      category: foundCategory?.value || suggestion.category,
       type: suggestion.type || prev.type
     }))
     setAutoFilled(true)
     setShowSuggestions(false)
     setSuggestions([])
-  }, [])
+  }, [getCategoryByValue])
 
   // Pegar primeira categoria disponível
   const getDefaultCategory = (type) => {

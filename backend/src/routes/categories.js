@@ -16,14 +16,20 @@ const DEFAULT_CATEGORIES = {
   ],
   expense: [
     { name: 'Alimentação', icon: 'Utensils', color: '#f97316' },
+    { name: 'Supermercado', icon: 'ShoppingCart', color: '#84cc16' },
+    { name: 'Transporte', icon: 'Car', color: '#06b6d4' },
     { name: 'Colaboradores', icon: 'Users', color: '#3b82f6' },
     { name: 'Moradia', icon: 'Home', color: '#8b5cf6' },
+    { name: 'Carro', icon: 'CarFront', color: '#64748b' },
+    { name: 'Manutenção Casa', icon: 'Wrench', color: '#78716c' },
     { name: 'Saúde', icon: 'Heart', color: '#ef4444' },
     { name: 'Educação', icon: 'GraduationCap', color: '#22c55e' },
     { name: 'Lazer', icon: 'Gamepad2', color: '#ec4899' },
     { name: 'Compras', icon: 'ShoppingBag', color: '#f59e0b' },
     { name: 'Contas', icon: 'Receipt', color: '#6366f1' },
     { name: 'Assinaturas', icon: 'CreditCard', color: '#14b8a6' },
+    { name: 'Pets', icon: 'PawPrint', color: '#a855f7' },
+    { name: 'Imposto', icon: 'FileText', color: '#dc2626' },
     { name: 'Outros', icon: 'MoreHorizontal', color: '#6b7280' }
   ]
 }
@@ -257,6 +263,58 @@ router.post('/reset', async (req, res) => {
     })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao resetar categorias', error: error.message })
+  }
+})
+
+// @route   POST /api/categories/sync
+// @desc    Sincronizar categorias - adiciona categorias padrão que estão faltando
+router.post('/sync', async (req, res) => {
+  try {
+    // Buscar categorias existentes do usuário
+    const existingCategories = await Category.find({
+      user: req.user._id,
+      isActive: true
+    })
+
+    const existingNames = new Set(
+      existingCategories.map(c => c.name.toLowerCase())
+    )
+
+    // Identificar e criar categorias que estão faltando
+    const missingCategories = []
+
+    for (const type of ['income', 'expense']) {
+      for (const defaultCat of DEFAULT_CATEGORIES[type]) {
+        if (!existingNames.has(defaultCat.name.toLowerCase())) {
+          missingCategories.push({
+            user: req.user._id,
+            type,
+            name: defaultCat.name,
+            icon: defaultCat.icon,
+            color: defaultCat.color,
+            isDefault: true
+          })
+        }
+      }
+    }
+
+    if (missingCategories.length > 0) {
+      await Category.insertMany(missingCategories)
+    }
+
+    // Buscar todas as categorias atualizadas
+    const categories = await Category.find({
+      user: req.user._id,
+      isActive: true
+    }).sort({ name: 1 })
+
+    res.json({
+      message: `${missingCategories.length} categoria(s) adicionada(s)`,
+      added: missingCategories.map(c => c.name),
+      categories
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao sincronizar categorias', error: error.message })
   }
 })
 

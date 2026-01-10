@@ -12,14 +12,20 @@ const DEFAULT_CATEGORIES = {
   ],
   expense: [
     { name: 'Alimentação', value: 'alimentacao', icon: 'Utensils', color: '#f97316' },
+    { name: 'Supermercado', value: 'supermercado', icon: 'ShoppingCart', color: '#84cc16' },
+    { name: 'Transporte', value: 'transporte', icon: 'Car', color: '#06b6d4' },
     { name: 'Colaboradores', value: 'colaboradores', icon: 'Users', color: '#3b82f6' },
     { name: 'Moradia', value: 'moradia', icon: 'Home', color: '#8b5cf6' },
+    { name: 'Carro', value: 'carro', icon: 'CarFront', color: '#64748b' },
+    { name: 'Manutenção Casa', value: 'manutencao_casa', icon: 'Wrench', color: '#78716c' },
     { name: 'Saúde', value: 'saude', icon: 'Heart', color: '#ef4444' },
     { name: 'Educação', value: 'educacao', icon: 'GraduationCap', color: '#22c55e' },
     { name: 'Lazer', value: 'lazer', icon: 'Gamepad2', color: '#ec4899' },
     { name: 'Compras', value: 'compras', icon: 'ShoppingBag', color: '#f59e0b' },
     { name: 'Contas', value: 'contas', icon: 'Receipt', color: '#6366f1' },
     { name: 'Assinaturas', value: 'assinaturas', icon: 'CreditCard', color: '#14b8a6' },
+    { name: 'Pets', value: 'pets', icon: 'PawPrint', color: '#a855f7' },
+    { name: 'Imposto', value: 'imposto', icon: 'FileText', color: '#dc2626' },
     { name: 'Outros', value: 'outros_despesa', icon: 'MoreHorizontal', color: '#6b7280' }
   ]
 }

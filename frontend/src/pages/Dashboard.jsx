@@ -261,7 +261,6 @@ function Dashboard() {
         // Excluir categorias de receita
         return !lowerCat.includes('receita') && lowerCat !== 'salario' && lowerCat !== 'salário' && !lowerCat.includes('freelance') && !lowerCat.includes('investimento')
       })
-      .slice(0, 8)
 
     // Calcular total para percentuais
     const total = expenseCategories.reduce((sum, [, amount]) => sum + amount, 0)

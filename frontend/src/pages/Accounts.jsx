@@ -59,6 +59,7 @@ export default function Accounts() {
     description: ''
   })
   const [fixingTransactions, setFixingTransactions] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     fetchAccounts()
@@ -94,29 +95,57 @@ export default function Accounts() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    // Validação para cartão de crédito
+    if (formData.type === 'credit_card') {
+      if (formData.creditLimit <= 0) {
+        toast.error('Limite do cartão deve ser maior que zero')
+        return
+      }
+      if (formData.closingDay && (formData.closingDay < 1 || formData.closingDay > 31)) {
+        toast.error('Dia de fechamento deve ser entre 1 e 31')
+        return
+      }
+      if (formData.dueDay && (formData.dueDay < 1 || formData.dueDay > 31)) {
+        toast.error('Dia de vencimento deve ser entre 1 e 31')
+        return
+      }
+    }
+
+    setSubmitting(true)
     try {
       if (editingAccount) {
         await api.put(`/accounts/${editingAccount._id}`, formData)
+        toast.success('Conta atualizada com sucesso')
       } else {
         await api.post('/accounts', formData)
+        toast.success('Conta criada com sucesso')
       }
       setShowModal(false)
       resetForm()
       fetchAccounts()
     } catch (error) {
       console.error('Erro ao salvar conta:', error)
+      toast.error(error.response?.data?.message || 'Erro ao salvar conta')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleTransfer = async (e) => {
     e.preventDefault()
+    setSubmitting(true)
     try {
       await api.post('/accounts/transfer', transferData)
+      toast.success('Transferência realizada com sucesso')
       setShowTransferModal(false)
       setTransferData({ fromAccountId: '', toAccountId: '', amount: 0, description: '' })
       fetchAccounts()
     } catch (error) {
       console.error('Erro na transferência:', error)
+      toast.error(error.response?.data?.message || 'Erro ao realizar transferência')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -124,9 +153,11 @@ export default function Accounts() {
     if (window.confirm('Tem certeza que deseja desativar esta conta?')) {
       try {
         await api.delete(`/accounts/${id}`)
+        toast.success('Conta desativada com sucesso')
         fetchAccounts()
       } catch (error) {
         console.error('Erro ao desativar conta:', error)
+        toast.error(error.response?.data?.message || 'Erro ao desativar conta')
       }
     }
   }
@@ -762,17 +793,19 @@ export default function Accounts() {
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   style={{
                     padding: '0.75rem 1.5rem',
                     border: 'none',
                     borderRadius: '0.5rem',
                     background: colors.primary,
                     color: '#fff',
-                    cursor: 'pointer',
-                    fontWeight: '500'
+                    cursor: submitting ? 'wait' : 'pointer',
+                    fontWeight: '500',
+                    opacity: submitting ? 0.7 : 1
                   }}
                 >
-                  {editingAccount ? 'Salvar' : 'Criar Conta'}
+                  {submitting ? 'Salvando...' : (editingAccount ? 'Salvar' : 'Criar Conta')}
                 </button>
               </div>
             </form>
@@ -925,17 +958,19 @@ export default function Accounts() {
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   style={{
                     padding: '0.75rem 1.5rem',
                     border: 'none',
                     borderRadius: '0.5rem',
                     background: colors.primary,
                     color: '#fff',
-                    cursor: 'pointer',
-                    fontWeight: '500'
+                    cursor: submitting ? 'wait' : 'pointer',
+                    fontWeight: '500',
+                    opacity: submitting ? 0.7 : 1
                   }}
                 >
-                  Transferir
+                  {submitting ? 'Transferindo...' : 'Transferir'}
                 </button>
               </div>
             </form>

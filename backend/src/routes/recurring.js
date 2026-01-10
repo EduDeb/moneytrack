@@ -6,6 +6,7 @@ const RecurringPayment = require('../models/RecurringPayment')
 const RecurringOverride = require('../models/RecurringOverride')
 const { protect } = require('../middleware/auth')
 const { v4: uuidv4 } = require('uuid')
+const { roundMoney } = require('../utils/moneyHelper')
 
 router.use(protect)
 
@@ -216,7 +217,7 @@ router.post('/installment', async (req, res) => {
           type: 'expense',
           category,
           description: `${name} (${i}/${totalInstallments})`,
-          amount: amount / totalInstallments,
+          amount: roundMoney(amount / totalInstallments),
           account,
           date: currentDate,
           isInstallment: true,
@@ -235,7 +236,7 @@ router.post('/installment', async (req, res) => {
         name,
         type: 'expense',
         category,
-        amount: amount / totalInstallments,
+        amount: roundMoney(amount / totalInstallments),
         account,
         frequency: 'monthly',
         dayOfMonth: currentDate.getDate(),

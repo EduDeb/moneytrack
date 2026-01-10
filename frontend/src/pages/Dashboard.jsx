@@ -91,6 +91,8 @@ function Dashboard() {
   useEffect(() => {
     let isMounted = true
     const abortController = new AbortController()
+    let retryCount = 0
+    const MAX_RETRIES = 3
 
     setLoading(true)
 
@@ -109,15 +111,23 @@ function Dashboard() {
           setDashboardData(dashboardRes.data)
           setTransactionSummary(transRes.data)
           setLoading(false)
+          retryCount = 0 // Reset on success
         }
       } catch (error) {
         if (error.name !== 'AbortError' && isMounted) {
           console.error('Erro ao carregar dados:', error)
-          if (!error.response) {
+          if (!error.response && retryCount < MAX_RETRIES) {
+            // Exponential backoff: 2s, 4s, 8s
+            const delay = 2000 * Math.pow(2, retryCount)
+            retryCount++
+            console.log(`Tentativa ${retryCount}/${MAX_RETRIES} em ${delay / 1000}s...`)
             setTimeout(() => {
               if (isMounted) fetchData()
-            }, 2000)
+            }, delay)
           } else {
+            if (retryCount >= MAX_RETRIES) {
+              toast.error('Erro de conexão. Verifique sua internet e recarregue a página.')
+            }
             setTransactionSummary({ income: 0, expenses: 0, balance: 0, accumulatedBalance: 0 })
             setLoading(false)
           }

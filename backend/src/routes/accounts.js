@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const mongoose = require('mongoose')
 const Account = require('../models/Account')
 const Transaction = require('../models/Transaction')
 const { protect, validateObjectId } = require('../middleware/auth')
@@ -11,35 +12,104 @@ router.use(protect)
 router.get('/', async (req, res) => {
   try {
     const { includeInactive } = req.query
-    const query = { user: req.user._id }
-    if (!includeInactive) query.isActive = true
+    const matchQuery = { user: req.user._id }
+    if (!includeInactive) matchQuery.isActive = true
 
-    const accounts = await Account.find(query).sort({ name: 1 })
-
-    // Calcular saldo atual baseado nas transações
-    const accountsWithBalance = await Promise.all(accounts.map(async (account) => {
-      const transactions = await Transaction.find({
-        user: req.user._id,
-        account: account._id,
-        status: 'confirmed'
-      })
-
-      let calculatedBalance = account.initialBalance
-      transactions.forEach(t => {
-        if (t.type === 'income') calculatedBalance += t.amount
-        else if (t.type === 'expense') calculatedBalance -= t.amount
-        else if (t.type === 'transfer') {
-          if (t.account.equals(account._id)) calculatedBalance -= t.amount
-          if (t.toAccount && t.toAccount.equals(account._id)) calculatedBalance += t.amount
+    // Usar aggregation com $lookup para evitar N+1 queries
+    const accountsWithBalance = await Account.aggregate([
+      { $match: matchQuery },
+      { $sort: { name: 1 } },
+      // Lookup para transações onde esta conta é a origem
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { accountId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$account', '$$accountId'] },
+                    { $eq: ['$status', 'confirmed'] }
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                income: {
+                  $sum: { $cond: [{ $eq: ['$type', 'income'] }, '$amount', 0] }
+                },
+                expense: {
+                  $sum: { $cond: [{ $eq: ['$type', 'expense'] }, '$amount', 0] }
+                },
+                transferOut: {
+                  $sum: { $cond: [{ $eq: ['$type', 'transfer'] }, '$amount', 0] }
+                },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: 'outTotals'
         }
-      })
-
-      return {
-        ...account.toObject(),
-        calculatedBalance,
-        transactionCount: transactions.length
+      },
+      // Lookup para transferências onde esta conta é o destino
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { accountId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$toAccount', '$$accountId'] },
+                    { $eq: ['$type', 'transfer'] },
+                    { $eq: ['$status', 'confirmed'] }
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                transferIn: { $sum: '$amount' }
+              }
+            }
+          ],
+          as: 'inTotals'
+        }
+      },
+      {
+        $addFields: {
+          outData: { $arrayElemAt: ['$outTotals', 0] },
+          inData: { $arrayElemAt: ['$inTotals', 0] }
+        }
+      },
+      {
+        $addFields: {
+          calculatedBalance: {
+            $add: [
+              '$initialBalance',
+              { $ifNull: ['$outData.income', 0] },
+              { $multiply: [{ $ifNull: ['$outData.expense', 0] }, -1] },
+              { $multiply: [{ $ifNull: ['$outData.transferOut', 0] }, -1] },
+              { $ifNull: ['$inData.transferIn', 0] }
+            ]
+          },
+          transactionCount: { $ifNull: ['$outData.count', 0] }
+        }
+      },
+      {
+        $project: {
+          outTotals: 0,
+          inTotals: 0,
+          outData: 0,
+          inData: 0
+        }
       }
-    }))
+    ])
 
     res.json({ accounts: accountsWithBalance })
   } catch (error) {
@@ -51,39 +121,81 @@ router.get('/', async (req, res) => {
 // @desc    Resumo de todas as contas
 router.get('/summary', async (req, res) => {
   try {
-    const accounts = await Account.find({ user: req.user._id, isActive: true })
+    // Usar aggregation com $lookup para evitar N+1 queries
+    const accountsWithBalance = await Account.aggregate([
+      { $match: { user: req.user._id, isActive: true } },
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { accountId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$account', '$$accountId'] },
+                    { $eq: ['$status', 'confirmed'] }
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                income: {
+                  $sum: { $cond: [{ $eq: ['$type', 'income'] }, '$amount', 0] }
+                },
+                expense: {
+                  $sum: { $cond: [{ $eq: ['$type', 'expense'] }, '$amount', 0] }
+                }
+              }
+            }
+          ],
+          as: 'totals'
+        }
+      },
+      {
+        $addFields: {
+          totalsData: { $arrayElemAt: ['$totals', 0] }
+        }
+      },
+      {
+        $addFields: {
+          balance: {
+            $add: [
+              '$initialBalance',
+              { $ifNull: ['$totalsData.income', 0] },
+              { $multiply: [{ $ifNull: ['$totalsData.expense', 0] }, -1] }
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          totals: 0,
+          totalsData: 0
+        }
+      }
+    ])
 
+    // Calcular totais
     let totalBalance = 0
     let totalCreditLimit = 0
     let totalCreditUsed = 0
 
-    const summary = await Promise.all(accounts.map(async (account) => {
-      const transactions = await Transaction.find({
-        user: req.user._id,
-        account: account._id,
-        status: 'confirmed'
-      })
-
-      let balance = account.initialBalance
-      transactions.forEach(t => {
-        if (t.type === 'income') balance += t.amount
-        else if (t.type === 'expense') balance -= t.amount
-      })
-
-      if (account.includeInTotal) {
+    accountsWithBalance.forEach(account => {
+      if (account.includeInTotal !== false) {
         if (account.type === 'credit_card') {
           totalCreditLimit += account.creditLimit || 0
-          totalCreditUsed += Math.abs(Math.min(balance, 0))
+          totalCreditUsed += Math.abs(Math.min(account.balance, 0))
         } else {
-          totalBalance += balance
+          totalBalance += account.balance
         }
       }
-
-      return { ...account.toObject(), balance }
-    }))
+    })
 
     res.json({
-      accounts: summary,
+      accounts: accountsWithBalance,
       totals: {
         balance: totalBalance,
         creditLimit: totalCreditLimit,
@@ -262,48 +374,67 @@ router.put('/:id', validateObjectId(), async (req, res) => {
 // @route   POST /api/accounts/:id/adjust
 // @desc    Ajustar saldo da conta
 router.post('/:id/adjust', validateObjectId(), async (req, res) => {
+  // Usar transação MongoDB para evitar race condition
+  const session = await mongoose.startSession()
+  session.startTransaction()
+
   try {
     const { newBalance, description } = req.body
 
     const account = await Account.findOne({
       _id: req.params.id,
       user: req.user._id
-    })
+    }).session(session)
 
     if (!account) {
+      await session.abortTransaction()
+      session.endSession()
       return res.status(404).json({ message: 'Conta não encontrada' })
     }
 
-    // Calcular saldo atual
-    const transactions = await Transaction.find({
-      user: req.user._id,
-      account: account._id,
-      status: 'confirmed'
-    })
+    // Calcular saldo atual usando aggregation (mais eficiente)
+    const totals = await Transaction.aggregate([
+      {
+        $match: {
+          user: req.user._id,
+          account: account._id,
+          status: 'confirmed'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          income: { $sum: { $cond: [{ $eq: ['$type', 'income'] }, '$amount', 0] } },
+          expense: { $sum: { $cond: [{ $eq: ['$type', 'expense'] }, '$amount', 0] } }
+        }
+      }
+    ]).session(session)
 
-    let currentBalance = account.initialBalance
-    transactions.forEach(t => {
-      if (t.type === 'income') currentBalance += t.amount
-      else if (t.type === 'expense') currentBalance -= t.amount
-    })
-
+    const totalsData = totals[0] || { income: 0, expense: 0 }
+    const currentBalance = account.initialBalance + totalsData.income - totalsData.expense
     const difference = newBalance - currentBalance
 
     if (difference !== 0) {
-      // Criar transação de ajuste
-      await Transaction.create({
+      // Criar transação de ajuste dentro da transação MongoDB
+      await Transaction.create([{
         user: req.user._id,
         type: difference > 0 ? 'income' : 'expense',
         category: 'ajuste',
         description: description || 'Ajuste de saldo',
         amount: Math.abs(difference),
         account: account._id,
-        date: new Date()
-      })
+        date: new Date(),
+        status: 'confirmed'
+      }], { session })
     }
+
+    await session.commitTransaction()
+    session.endSession()
 
     res.json({ message: 'Saldo ajustado com sucesso', newBalance })
   } catch (error) {
+    await session.abortTransaction()
+    session.endSession()
     res.status(400).json({ message: 'Erro ao ajustar saldo', error: error.message })
   }
 })
@@ -314,8 +445,21 @@ router.post('/transfer', async (req, res) => {
   try {
     const { fromAccountId, toAccountId, amount, description, date } = req.body
 
+    // Validação dos IDs
+    if (!fromAccountId || !mongoose.Types.ObjectId.isValid(fromAccountId)) {
+      return res.status(400).json({ message: 'ID de conta de origem inválido' })
+    }
+    if (!toAccountId || !mongoose.Types.ObjectId.isValid(toAccountId)) {
+      return res.status(400).json({ message: 'ID de conta de destino inválido' })
+    }
+
     if (fromAccountId === toAccountId) {
       return res.status(400).json({ message: 'Contas de origem e destino devem ser diferentes' })
+    }
+
+    // Validação do valor
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Valor da transferência deve ser maior que zero' })
     }
 
     const [fromAccount, toAccount] = await Promise.all([

@@ -84,20 +84,27 @@ router.get('/summary', async (req, res) => {
     const monthBalance = subtractMoney(income, expenses);
 
     // SALDO ACUMULADO (como conta corrente)
-    // Buscar TODAS as transações anteriores ao mês selecionado
-    const previousTransactions = await Transaction.find({
-      user: req.user._id,
-      date: { $lt: startDate }
-    });
+    // Usar aggregation para calcular totais no banco de dados (evita carregar todos os documentos)
+    const previousTotals = await Transaction.aggregate([
+      {
+        $match: {
+          user: req.user._id,
+          date: { $lt: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$type',
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
 
-    const previousIncome = sumMoney(...previousTransactions
-      .filter(t => t.type === 'income')
-      .map(t => t.amount));
-
-    const previousExpenses = sumMoney(...previousTransactions
-      .filter(t => t.type === 'expense')
-      .map(t => t.amount));
-
+    // Extrair totais por tipo
+    const previousIncomeDoc = previousTotals.find(t => t._id === 'income');
+    const previousExpenseDoc = previousTotals.find(t => t._id === 'expense');
+    const previousIncome = roundMoney(previousIncomeDoc?.total || 0);
+    const previousExpenses = roundMoney(previousExpenseDoc?.total || 0);
     const previousBalance = subtractMoney(previousIncome, previousExpenses);
 
     // Saldo total acumulado (saldo anterior + saldo do mês atual)
